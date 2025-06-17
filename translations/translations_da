@@ -1,0 +1,366 @@
+<l10n>
+Add comment
+More actions
+
+
+	<texts>
+
+
+
+
+
+		<text name="rw_ui_fog" text="Tyk Tåge"/>
+
+
+		<text name="rw_ui_hour" text="i %s time" tag="format"/>
+
+
+		<text name="rw_ui_hours" text="i %s timer" tag="format"/>
+
+
+		<text name="rw_ui_minute" text="i %s minuttet" tag="format"/>
+
+
+		<text name="rw_ui_minutes" text="i %s minutter" tag="format"/>
+
+
+		<text name="rw_ui_aboutToWither" text="Marken %s visner snart" tag="format"/>
+
+
+		<text name="rw_ui_hasWithered" text="Marken %s er visnet" tag="format"/>
+
+
+		<text name="rw_ui_currentYield" text="Nuværende Udbytte"/>
+
+
+		<text name="rw_ui_moisture" text="vandprocent"/>
+
+
+		<text name="rw_ui_witherChance" text="chancen for det visner"/>
+
+
+		<text name="rw_ui_retention" text="nuværende vandprocent"/>
+
+
+		<text name="rw_ui_idealMoisture" text="Ideel vandprocent"/>
+
+
+		<text name="rw_ui_perfectMoisture" text="Perfekt vandprocent"/>
+
+
+		<text name="rw_ui_blizzard_coming" text="snestorm på vej"/>
+
+
+		<text name="rw_ui_blizzard_now" text="snestorm"/>
+
+
+		<text name="rw_ui_drought_coming" text="Duggen falder snart"/>
+
+
+		<text name="rw_ui_drought_now" text="Duggen ligger tungt"/>
+
+
+		<text name="rw_ui_snowExpected" text="%scm - %scm forventet" tag="format"/>
+
+
+		
+
+
+		<text name="rw_ui_amount" text="mængde"/>
+
+
+		<text name="rw_ui_requiredMoisture" text="mangler vand"/>
+
+
+		<text name="rw_ui_needsTedding" text="skal rædrenses"/>
+
+
+		<text name="rw_ui_yes" text="Ja"/>
+
+
+		<text name="rw_ui_no" text="Nej"/>
+
+
+
+
+
+        <text name="input_Irrigation" text="Vanding"/>
+
+
+        <text name="finance_irrigationUpkeep" text="Vandning omkostninger"/>
+
+
+        <text name="rw_ui_irrigation_start" text="Start vandning"/>
+
+
+        <text name="rw_ui_irrigation_stop" text="Stop vandning"/>
+
+
+        <text name="rw_ui_pendingIrrigationCost" text="Forventet vandingsomkostninger"/>
+
+
+        <text name="rw_ui_irrigationUpkeep" text="vedligeholdelse af Vandningsanlæg"/>
+
+
+		<text name="rw_ui_inactive" text="Inaktiv"/>
+
+
+		<text name="rw_ui_active" text="Aktiv"/>
+
+
+
+
+
+		<text name="rw_ui_today" text="Idag"/>
+
+
+		<text name="rw_ui_cellWidth" text="Celle Bredde"/>
+
+
+		<text name="rw_ui_cellHeight" text="Celle Højde"/>
+
+
+		<text name="rw_ui_ownedFields" text="Ejet marker"/>
+
+
+		<text name="rw_ui_allFields" text="Alle Marker"/>
+
+
+		<text name="rw_ui_teleport" text="Teleport"/>
+
+
+		
+
+
+		
+
+
+		<text name="rw_contract_field_irrigation_title" text="Vandning"/>
+
+
+		<text name="rw_contract_field_irrigation_description" text="Vand marken for at øge den gennemsnitlige fugtighed til målniveauet"/>
+
+
+		<text name="rw_contract_field_irrigation_currentAverage" text="gennemsnitlige vandprocent"/>
+
+
+		<text name="rw_contract_field_irrigation_targetAverage" text="gennemsnitsmål for vandning"/>
+
+
+		
+
+
+		
+
+
+		
+
+
+		<!--  INDSTILLINGER  -->
+
+
+
+
+
+
+
+
+		<text name="rw_settings" text="Realistisk vejr"/>
+
+
+
+
+
+		<text name="rw_settings_off" text="Off"/>
+
+
+		<text name="rw_settings_on" text="On"/>
+
+
+		
+
+
+		<text name="rw_settings_witheringEnabled_label" text="afgrøde visner"/>
+
+
+		<text name="rw_settings_witheringEnabled_tooltip_1" text="Afgrøder vil ikke visne pågrund af lav fugtighed"/>
+
+
+		<text name="rw_settings_witheringEnabled_tooltip_2" text="Afgrøder visner pågrund af lav fugtighed"/>
+
+
+		
+
+
+		<text name="rw_settings_rebuildMoistureMap_label" text="Genopbyg fugtighedskortet"/>
+
+
+		<text name="rw_settings_rebuildMoistureMap_tooltip" text="Slet og genopbyg fugtighedskortet med brugerdefinerede argumenter"/>
+
+
+		<text name="rw_settings_rebuildMoistureMap_text" text="Genopbyg fugtighedskortet"/>
+
+
+
+
+
+		<text name="rw_settings_performanceIndex_label" text="Udbytte Index"/>
+
+
+		<text name="rw_settings_performanceIndex_tooltip" text="Forøg denne værdi for at forbedre udbyttet"/>
+
+
+
+
+
+		<text name="rw_settings_witheringChance_label" text="Visning Oversigt"/>
+
+
+		<text name="rw_settings_witheringChance_tooltip" text="Ændre sandsynligheden for, at afgrøder visner på grund af tørke"/>
+
+
+
+
+
+		<text name="rw_settings_moistureGainModifier_label" text="Fugtigheds beregner"/>
+
+
+		<text name="rw_settings_moistureGainModifier_tooltip" text="Ændre mængden af fugt"/>
+
+
+
+
+
+		<text name="rw_settings_moistureLossModifier_label" text="Fugt tab beregner"/>
+
+
+		<text name="rw_settings_moistureLossModifier_tooltip" text="Ændre hvor meget tabt fugt"/>
+
+
+
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_label" text="Fugt oversigt"/>
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_tooltip_1" text="Fugt oversigten vil ikke blive vist"/>
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_tooltip_2" text="Fugt oversigten vil kun blive vist, når du er på en mark"/>
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_tooltip_3" text="Fugt oversigten vil være synlig hele tiden"/>
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_texts_1" text="Off"/>
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_texts_2" text="Begrænset"/>
+
+
+		<text name="rw_settings_moistureOverlayBehaviour_texts_3" text="On"/>
+
+
+
+
+
+		<text name="rw_settings_moistureFrameBehaviour_label" text="Fugt Oversigten"/>
+
+
+		<text name="rw_settings_moistureFrameBehaviour_tooltip_1" text="Fugt oversigten i hovedmenuen vil vise alle celler på den valgte mark"/>
+
+
+		<text name="rw_settings_moistureFrameBehaviour_tooltip_2" text="Fugt oversigten i hovedmenuen viser gennemsnitsværdierne for hver mark (bedre for udbytte)
+
+
+"/>
+
+
+		<text name="rw_settings_moistureFrameBehaviour_texts_1" text="Detajleret"/>
+
+
+		<text name="rw_settings_moistureFrameBehaviour_texts_2" text="begrænset"/>
+
+
+
+
+
+		<text name="rw_settings_blizzardsEnabled_label" text="Snestorm"/>
+
+
+		<text name="rw_settings_blizzardsEnabled_tooltip_1" text="snestorm er slået fra"/>
+
+
+		<text name="rw_settings_blizzardsEnabled_tooltip_2" text="snestorm er slået til"/>
+
+
+
+
+
+		<text name="rw_settings_droughtsEnabled_label" text="Tørke"/>
+
+
+		<text name="rw_settings_droughtsEnabled_tooltip_1" text="Tørke er slået fra"/>
+
+
+		<text name="rw_settings_droughtsEnabled_tooltip_2" text="Tørke er slået til"/>
+
+
+
+
+
+		<text name="rw_settings_grassMoistureGainModifier_label" text="Fugtigheds beregner for Græs"/>
+
+
+		<text name="rw_settings_grassMoistureGainModifier_tooltip" text="Ændre mængden af ​​fugt, der opnås til klippet græs"/>
+
+
+
+
+
+		<text name="rw_settings_grassMoistureLossModifier_label" text="Fugtigheds beregner Græs"/>
+
+
+		<text name="rw_settings_grassMoistureLossModifier_tooltip" text="Ændre mængden af ​​tabt fugt til klippet græs"/>
+
+
+
+
+
+		<text name="rw_settings_puddlesEnabled_label" text="Pytter"/>
+
+
+		<text name="rw_settings_puddlesEnabled_tooltip_1" text="Pytter er deaktiveret"/>
+
+
+		<text name="rw_settings_puddlesEnabled_tooltip_2" text="Pytter er altiveret"/>
+
+
+
+
+
+		<text name="rw_settings_fireEnabled_label" text="Mark brænde"/>
+
+
+		<text name="rw_settings_fireEnabled_tooltip_1" text="Mark brænde er deaktiveret"/>
+
+
+		<text name="rw_settings_fireEnabled_tooltip_2" text="Mark brænde er aktiveret"/>
+
+
+
+
+
+		<text name="rw_settings_moistureYieldFactor_label" text="Fugtudbyttefaktor"/>
+
+
+		<text name="rw_settings_moistureYieldFactor_tooltip" text="Ændre høstudbyttet ved tilførelse af fugt"/>
+
+
+		
+
+
+	</texts>
+
+
+</l10n>
