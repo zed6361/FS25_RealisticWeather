@@ -17,5 +17,39 @@
 		<textFocusedColor value="$preset_fs25_colorMainDark"/>
 		<textDisabledColor value="$preset_colorDisabled"/>
 	</Profile>
+
+	<Profile name="rw_pageSelectorContainer" extends="emptyPanel" with="anchorBottomCenter">
+		<position value="0px -50px"/>
+		<size value="275px 80px"/>
+	</Profile>
+
+	<Profile name="rw_pageSelectorPagePrevious" extends="buttonBase" with="anchorMiddleLeft">
+		<imageSliceId value="realistic_weather_pages.page_next"/>
+		<imageDisabledColor value="$preset_fs25_colorGreyMTODisabled"/>
+		<imageRotation value="180"/>
+		<size value="32px 32px"/>
+		<position value="35px 0px"/>
+	</Profile>
+
+	<Profile name="rw_pageSelectorPageNext" extends="rw_pageSelectorPagePrevious" with="anchorMiddleRight">
+		<imageRotation value="0"/>
+		<position value="-35px 0px"/>
+	</Profile>
+
+	<Profile name="rw_pageSelectorPageLast" extends="buttonBase" with="anchorMiddleRight">
+		<size value="32px 32px"/>
+		<imageSliceId value="realistic_weather_pages.page_last"/>
+		<position value="0px 0px"/>
+		<imageDisabledColor value="$preset_fs25_colorGreyMTODisabled"/>
+	</Profile>
+
+	<Profile name="rw_pageSelectorPageFirst" extends="rw_pageSelectorPageLast" with="anchorMiddleLeft">
+		<imageRotation  value="180"/>
+	</Profile>
+
+	<Profile name="rw_pageSelectorPageText" extends="fs25_textDefault" with="anchorMiddleCenter">
+		<position value="0px 0px"/>
+		<width value="125px"/>
+	</Profile>
 	
 </GUIProfiles>

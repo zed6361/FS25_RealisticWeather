@@ -1,0 +1,10 @@
+<texture>
+	<meta>
+		<filename>page_icons.png</filename>
+		<size width="512" height="512"/>
+	</meta>
+	<slices>
+		<slice id="page_last" uvs="0px 0px 105px 98px"/>
+		<slice id="page_next" uvs="105px 0px 105px 98px"/>
+	</slices>
+</texture>

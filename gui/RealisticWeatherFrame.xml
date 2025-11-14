@@ -50,6 +50,15 @@
 				<Text profile="rw_moistureListText" position="1020px 0px" visible="false" name="irrigationCost"/>
 			</ListItem>
 		</SmoothList>
+
+		<GuiElement profile="rw_pageSelectorContainer">
+			<Button profile="rw_pageSelectorPageFirst" id="pageFirst" onClick="onClickPageFirst"/>
+			<Button profile="rw_pageSelectorPagePrevious" id="pagePrevious" onClick="onClickPagePrevious"/>
+			<Text profile="rw_pageSelectorPageText" id="pageNumber" position="55px 10px"/>
+			<Text profile="rw_pageSelectorPageText" id="cellNumber" position="30px -10px"/>
+			<Button profile="rw_pageSelectorPageNext" id="pageNext" onClick="onClickPageNext"/>
+			<Button profile="rw_pageSelectorPageLast" id="pageLast" onClick="onClickPageLast"/>
+		</GuiElement>
 		
 		<ThreePartBitmap profile="rw_sliderBox">
 			<Slider profile="fs25_listSlider" dataElementId="moistureList"/>
