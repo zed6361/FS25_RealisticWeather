@@ -113,7 +113,21 @@ addModEventListener(RealisticWeather)
 
 g_realisticWeather:registerFunction(FSBaseMission, "getHarvestScaleMultiplier", function(self, superFunc, fruitTypeIndex, sprayLevel, plowLevel, limeLevel, weedsLevel, stubbleLevel, rollerLevel, beeYieldBonusPercentage)
 
-    local baseYield = superFunc(self, fruitTypeIndex, sprayLevel, plowLevel, limeLevel, weedsLevel, stubbleLevel, rollerLevel, beeYieldBonusPercentage)
+    -- RW_CRITICAL_FIX: preserve GIANTS base behavior and avoid hard-fail on upstream errors
+    local okBase, baseYield = pcall(superFunc, self, fruitTypeIndex, sprayLevel, plowLevel, limeLevel, weedsLevel, stubbleLevel, rollerLevel, beeYieldBonusPercentage)
+    if not okBase then
+        print(string.format("RealisticWeather: getHarvestScaleMultiplier base call failed (%s)", tostring(baseYield)))
+        return 1
+    end
+
+    -- RW_COMPAT_FIX: Precision Farming compatibility guard
+    if RW_FSBaseMission ~= nil and RW_FSBaseMission.isPrecisionFarmingLoaded then
+        return baseYield
+    end
+
+    if g_currentMission == nil or g_currentMission.moistureSystem == nil then
+        return baseYield
+    end
 
     local moisture = g_realisticWeather.mowerMoisture or g_realisticWeather.cutterMoisture or g_realisticWeather.fieldMoisture
 

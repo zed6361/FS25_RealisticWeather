@@ -168,6 +168,8 @@ function RW_FSBaseMission:onStartMission()
 
     if g_modIsLoaded["FS25_RealisticLivestock"] then RW_Weather.isRealisticLivestockLoaded = true end
     if g_modIsLoaded["FS25_ExtendedGameInfoDisplay"] then RW_GameInfoDisplay.isExtendedGameInfoDisplayLoaded = true end
+    -- RW_COMPAT_FIX: keep yield logic deterministic with Precision Farming
+    RW_FSBaseMission.isPrecisionFarmingLoaded = g_modIsLoaded["FS25_precisionFarming"] or g_modIsLoaded["FS25_PrecisionFarming"] or g_modIsLoaded["precisionFarming"]
 
     local realisticWeatherFrame = RealisticWeatherFrame.new() 
 	g_gui:loadGui(modDirectory .. "gui/RealisticWeatherFrame.xml", "RealisticWeatherFrame", realisticWeatherFrame, true)
@@ -187,10 +189,16 @@ function RW_FSBaseMission:sendInitialClientState(connection, _, _)
 
     local puddleSystem = g_currentMission.puddleSystem
     local fireSystem = g_currentMission.fireSystem
+    local fireSnapshot = {}
+
+    -- RW_MP_FIX: clone fire list to avoid mutation races during serialization
+    for i = 1, #fireSystem.fires do
+        fireSnapshot[i] = fireSystem.fires[i]
+    end
 
     connection:sendEvent(RW_BroadcastSettingsEvent.new())
     connection:sendEvent(PuddleSystemStateEvent.new(puddleSystem.updateIteration, puddleSystem.timeSinceLastUpdate, puddleSystem.puddles))
-    connection:sendEvent(FireEvent.new(fireSystem.updateIteration, fireSystem.timeSinceLastUpdate, fireSystem.fieldId, fireSystem.fires))
+    connection:sendEvent(FireEvent.new(fireSystem.updateIteration, fireSystem.timeSinceLastUpdate, fireSystem.fieldId, fireSnapshot))
 
 end
 

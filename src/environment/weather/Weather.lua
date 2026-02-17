@@ -10,323 +10,197 @@ RW_Weather.isRealisticLivestockLoaded = false
 Weather.blizzardsEnabled = true
 Weather.droughtsEnabled = true
 
-SnowSystem.MAX_HEIGHT = RW_Weather.FACTOR.SNOW_HEIGHT
 local animalStepCount = 0
 local animalsToSink = 10
 local animalIdToPos = {}
 local profile = Utils.getPerformanceClassId()
+local RW_WEATHER_ORIGINAL_UPDATE = Weather.update
+local WEATHER_TIME_SCALE_DENOMINATOR = 100000
+local BLIZZARD_EXTRA_MULTIPLIER = 9
 
-
-function RW_Weather:update(_, dT)
-
-    local timescale = dT * g_currentMission:getEffectiveTimeScale()
-
-    if #self.forecastItems >= 2 then
-        local forecast2 = self.forecastItems[2]
-        local forecast1 = self.forecastItems[1]
-        local weatherObject1 = self:getWeatherObjectByIndex(forecast1.season, forecast1.objectIndex)
-
-        if self.owner.currentMonotonicDay > forecast2.startDay or self.owner.currentMonotonicDay == forecast2.startDay and self.owner.dayTime > forecast2.startDayTime then
-            local changeDuration = self.cheatedTime and 0 or Weather.CHANGE_DURATION
-            weatherObject1:deactivate(changeDuration)
-            local weatherObject2 = self:getWeatherObjectByIndex(forecast2.season, forecast2.objectIndex)
-            weatherObject2:activate(forecast2, changeDuration)
-
-            if weatherObject2.setWindValues ~= nil then
-                local a, b, c, d = self.windUpdater:getCurrentValues()
-                weatherObject2:setWindValues(a, b, c, d)
-            end
-
-            self:onWeatherChanged(weatherObject2)
-            table.remove(self.forecastItems, 1)
-
-            if g_server ~= nil then self:fillWeatherForecast() end
-        elseif self.cheatedTime then
-            self.cheatedTime = nil
-            local rainScale = self:getRainFallScale()
-            local hailScale = self:getHailFallScale()
-            local snowScale = self:getSnowFallScale()
-            if rainScale == 0 and hailScale == 0 and snowScale == 0 then self.groundWetness = 0 end
-        end
-
-        local isDry = not (self:getIsRaining() or self:getIsHailing())
-
-        if isDry then isDry = not self:getIsSnowing() end
-        if isDry then
-            self.timeSinceLastRain = self.timeSinceLastRain + timescale
-        else
-            self.timeSinceLastRain = 0
-        end
-    elseif g_server ~= nil then
-        self:fillWeatherForecast()
+local function updateAnimalSnowTracks(self, indoorMask)
+    if profile < 4 or not g_currentMission.missionInfo.isSnowEnabled or self.snowHeight <= SnowSystem.MIN_LAYER_HEIGHT then
+        return
+    end
+    if animalStepCount < math.min(math.max(100, animalsToSink * 4), 500) then
+        return
     end
 
-    for _, weatherObject in pairs(self.weatherObjects) do
-        for _, weather in ipairs(weatherObject) do
-            weather:update(timescale)
-        end
-    end
-
-    local _, currentWeather = self.forecast:dataForTime(self.owner.currentMonotonicDay, self.owner.dayTime)
-    local minTemp, maxTemp = self.temperatureUpdater:getCurrentValues()
-
-    if currentWeather ~= nil and currentWeather.isBlizzard and (maxTemp > 0 or minTemp > -8) then
-        minTemp = math.random(-15, -8)
-        maxTemp = math.random(minTemp + 3, minTemp + 8)
-        self.temperatureUpdater:setTargetValues(minTemp, maxTemp, true)
-    end
-
-    if currentWeather ~= nil and currentWeather.isDraught and (maxTemp < 35 or minTemp < 30) then
-        minTemp = math.random(30, 35)
-        maxTemp = math.random(minTemp + 5, minTemp + 15)
-        self.temperatureUpdater:setTargetValues(minTemp, maxTemp, true)
-    end
-
-
-    self.cloudUpdater:update(timescale)
-    self.temperatureUpdater:update(timescale)
-    self.windUpdater:update(timescale)
-    self.fogUpdater:update(timescale)
-    self.rainUpdater:update(timescale)
-
-    if self.skyBoxUpdater ~= nil then self.skyBoxUpdater:update(timescale, self.owner.dayTime, self:getRainFallScale(), self:getTimeUntilRain()) end
-
-    local effectiveTimescale = g_currentMission:getEffectiveTimeScale()
-    local temperature = self.temperatureUpdater:getTemperatureAtTime(self.owner.dayTime)
-
-    if g_currentMission.missionInfo.isSnowEnabled then
-
-        local blizzardFactor = currentWeather ~= nil and currentWeather.isBlizzard and self.blizzardsEnabled and 10 or 1
-
-        self.isBlizzard = currentWeather ~= nil and currentWeather.isBlizzard and self.blizzardsEnabled
-
-        if self:getIsSnowing() and temperature < 10 then
-            local scale = 1 - temperature * 0.1
-            self.snowHeight = math.clamp(self.snowHeight + RW_Weather.FACTOR.SNOW_FACTOR * (timescale / 100000) * self:getSnowFallScale() * scale * blizzardFactor, 0, RW_Weather.FACTOR.SNOW_HEIGHT)
-        elseif temperature >= 10 then
-            self.snowHeight = 0
-            g_currentMission.snowSystem:removeAll()
-        elseif temperature > 0 and self.snowHeight > 0 then
-            local scale = self:getIsRaining() and math.max(5 / self:getRainFallScale(), 1.25) or 1
-            self.snowHeight = math.clamp(self.snowHeight - temperature * 0.001 * (timescale / 100000) * scale, 0, RW_Weather.FACTOR.SNOW_HEIGHT)
-            if self.snowHeight == 0 then g_currentMission.snowSystem:removeAll() end
-        end
-
-    else
-        self.snowHeight = math.max(self.snowHeight - 0.005 * (dT / 1000) * (effectiveTimescale / 100), 0)
-        self.isBlizzard = false
-    end
-
-    local wetness
-
-    if self.timeSinceLastRain == 0 then
-        local scale = math.max(self:getRainFallScale(), self:getSnowFallScale(), self:getHailFallScale())
-        wetness = timescale / self.groundWetnessWetDuration * scale
-    else
-        wetness = -(timescale / self.groundWetnessDryDuration)
-    end
-
-    self.groundWetness = math.clamp(self.groundWetness + wetness, 0, 1)
-    g_currentMission.snowSystem:setSnowHeight(self.snowHeight)
-
-    local groundWetness = self:getGroundWetness()
-    groundWetness = math.max(0, groundWetness - 0.15) / 0.85
-
-    setWetness(groundWetness)
-    setTerrainDisplacementWetness(g_terrainNode, groundWetness)
-
-
-    local hail = self:getHailFallScale()
-    local indoorMask = g_currentMission.indoorMask
-
-    if hail > 0 then
-        local vehicles = g_currentMission.vehicleSystem.vehicles
-
-        for _, vehicle in pairs(vehicles) do
-
-            local wearable = vehicle.spec_wearable
-
-            if wearable == nil then continue end
-            local x, _, z = getWorldTranslation(vehicle.rootNode)
-
-            if x == nil or z == nil then continue end
-
-            local isIndoor = indoorMask:getIsIndoorAtWorldPosition(x, z)
-            if isIndoor then continue end
-
-            local damageAmount = hail * 0.0006 * (timescale / 100000)
-            local wearAmount = hail * 0.0018 * (timescale / 100000)
-            wearable:addWearAmount(wearAmount, true)
-            wearable:addDamageAmount(damageAmount, true)
-
-        end
-    end
-
-    local rainfall = self:getRainFallScale()
-    local snowfall = self:getSnowFallScale()
-    local hailfall = self:getHailFallScale()
-
-    if rainfall > 0 or snowfall > 0 then
-
-        local items = g_currentMission.itemSystem.itemByUniqueId
-        local balesToDelete = {}
-
-        for uniqueId, item in pairs(items) do
-            if g_currentMission.objectsToClassName[item] == "Bale" and item.fillLevel ~= nil and item.nodeId ~= 0 and item.wrappingState == 0 and (item.fillType == FillType.SILAGE or item.fillType == FillType.GRASS_WINDROW or item.fillType == FillType.DRYGRASS_WINDROW) then
-                local x, _, z = getWorldTranslation(item.nodeId)
-
-                if indoorMask:getIsIndoorAtWorldPosition(x, z) then continue end
-
-                local fillLevel = item.fillLevel
-                item.fillLevel = math.max(fillLevel - (rainfall + (snowfall * 0.4)) * 0.0001 * timescale, 0)
-
-                if item.fillLevel <= 0 then table.insert(balesToDelete, item) end
-            end
-        end
-
-        for i = #balesToDelete, 1, -1 do balesToDelete[i]:delete() end
-
-    end
-
-
-    local draughtFactor = currentWeather ~= nil and currentWeather.isDraught and self.droughtsEnabled and 1.33 or 1
-    local temp = self.temperatureUpdater:getTemperatureAtTime(self.owner.dayTime)
-    local hour = math.floor(self.owner:getMinuteOfDay() / 60)
-    local daylightStart, dayLightEnd, _, _ = self.owner.daylight:getDaylightTimes()
-    --local moisture = self.moisture or (math.random(12, 25) / 100)
-    --local oldMoisture = moisture * 1
-
-    --if temp < 0 then wetness = wetness * 0.35 end
-    --if wetness > 0 then moistureDelta = moistureDelta + math.clamp(wetness * 0.001825, 0, 0.0001) end
-
-    local moistureSystem = g_currentMission.moistureSystem
-
-    local moistureDelta = math.clamp((rainfall + snowfall * 0.75 + hailfall * 0.15) * 0.009 * (timescale / 100000), 0, 0.00005) * moistureSystem.moistureGainModifier
-
-    local sunFactor = (hour >= daylightStart and hour < dayLightEnd and 1) or 0.33
-
-    if temp >= 45 then
-        moistureDelta = moistureDelta - (temp * 0.000012 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
-    elseif temp >= 35 then
-        moistureDelta = moistureDelta - (temp * 0.0000088 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
-    elseif temp >= 25 then
-        moistureDelta = moistureDelta - (temp * 0.0000038 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
-    elseif temp >= 15 then
-        moistureDelta = moistureDelta - (temp * 0.0000012 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
-    elseif temp > 0 then
-        moistureDelta = moistureDelta - (temp * 0.0000005 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
-    end
-
-    --self.moisture = moisture
-
-
-    g_currentMission.grassMoistureSystem:update(moistureDelta)
-    moistureSystem:update(moistureDelta, timescale)
-
-
-
-
-
-
-    -- ################################################################
-
-    -- NOTES
-
-    -- Resource-heavy operation: disabled for low systems
-
-    -- It is unfortunately impossible to create a "footsteps" effect
-    -- without completely redesigning the entire visual animals system
-    -- ie: all the i3ds would have to have more parts added to them
-    -- and the animals would have to be loaded script-side rather than
-    -- engine-side (addHusbandryAnimal), which would also mean having
-    -- to manually start their animation loops (and possibly also set
-    -- their position manually)
-
-    -- ################################################################
-
-    if profile >= 4 and g_currentMission.missionInfo.isSnowEnabled and self.snowHeight > SnowSystem.MIN_LAYER_HEIGHT and animalStepCount >= math.min(math.max(100, animalsToSink * 4), 500) then
-
-        animalsToSink = 0
-
-        local husbandries = g_currentMission.husbandrySystem.clusterHusbandries
-        if husbandries ~= nil then
-            local snowSystem = g_currentMission.snowSystem
-            local animalsSunk = 0
-
-            for _, husbandry in pairs(husbandries) do
-
-                if RW_Weather.isRealisticLivestockLoaded then
-                    local husbandryIds = husbandry.husbandryIds or {}
-
-                    for i, animalIds in pairs(husbandry.animalIdToCluster) do
-                        animalsToSink = animalsToSink + #animalIds
-                        if animalIdToPos[husbandryIds[i]] == nil then animalIdToPos[husbandryIds[i]] = {} end
-
-                        for animalId, _ in pairs(animalIds) do
-                            local x, _, z = getAnimalPosition(husbandryIds[i], animalId)
-                            if indoorMask:getIsIndoorAtWorldPosition(x, z) then continue end
-                            local heightUnderAnimal = snowSystem:getSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1)
-
-                            local oldX, oldZ
-
-                            if animalIdToPos[husbandryIds[i]][animalId] ~= nil then
-                                oldX = animalIdToPos[husbandryIds[i]][animalId].x
-                                oldZ = animalIdToPos[husbandryIds[i]][animalId].z
-                            else
-                                animalIdToPos[husbandryIds[i]][animalId] = {}
-                            end
-
-                            if heightUnderAnimal > 0.05 and (oldX ~= x or oldZ ~= z) then snowSystem:setSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1, heightUnderAnimal * 0.75) end
-
-                            animalsSunk = animalsSunk + 1
-                            animalIdToPos[husbandryIds[i]][animalId].x = x
-                            animalIdToPos[husbandryIds[i]][animalId].z = z
-
-                            if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
-                        end
-
-
-                        if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
-                    end
-                else
-                    animalsToSink = animalsToSink + #husbandry.animalIdToCluster
-
-                    if animalIdToPos[husbandry.husbandryId] == nil then animalIdToPos[husbandry.husbandryId] = {} end
-
-                    for animalId, _ in pairs(husbandry.animalIdToCluster) do
-                        local x, _, z = getAnimalPosition(husbandry.husbandryId, animalId)
+    animalsToSink = 0
+
+    local husbandries = g_currentMission.husbandrySystem.clusterHusbandries
+    if husbandries ~= nil then
+        local snowSystem = g_currentMission.snowSystem
+        local animalsSunk = 0
+
+        for _, husbandry in pairs(husbandries) do
+            if RW_Weather.isRealisticLivestockLoaded then
+                local husbandryIds = husbandry.husbandryIds or {}
+
+                for i, animalIds in pairs(husbandry.animalIdToCluster) do
+                    animalsToSink = animalsToSink + #animalIds
+                    if animalIdToPos[husbandryIds[i]] == nil then animalIdToPos[husbandryIds[i]] = {} end
+
+                    for animalId, _ in pairs(animalIds) do
+                        local x, _, z = getAnimalPosition(husbandryIds[i], animalId)
                         if indoorMask:getIsIndoorAtWorldPosition(x, z) then continue end
                         local heightUnderAnimal = snowSystem:getSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1)
 
                         local oldX, oldZ
-
-                        if animalIdToPos[husbandry.husbandryId][animalId] ~= nil then
-                            oldX = animalIdToPos[husbandry.husbandryId][animalId].x
-                            oldZ = animalIdToPos[husbandry.husbandryId][animalId].z
+                        if animalIdToPos[husbandryIds[i]][animalId] ~= nil then
+                            oldX = animalIdToPos[husbandryIds[i]][animalId].x
+                            oldZ = animalIdToPos[husbandryIds[i]][animalId].z
                         else
-                            animalIdToPos[husbandry.husbandryId][animalId] = {}
+                            animalIdToPos[husbandryIds[i]][animalId] = {}
                         end
 
-                        if heightUnderAnimal > 0.05 and (oldX ~= x or oldZ ~= z) then snowSystem:setSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1, heightUnderAnimal * 0.75) end
+                        if heightUnderAnimal > 0.05 and (oldX ~= x or oldZ ~= z) then
+                            snowSystem:setSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1, heightUnderAnimal * 0.75)
+                        end
 
                         animalsSunk = animalsSunk + 1
-                        animalIdToPos[husbandry.husbandryId][animalId].x = x
-                        animalIdToPos[husbandry.husbandryId][animalId].z = z
+                        animalIdToPos[husbandryIds[i]][animalId].x = x
+                        animalIdToPos[husbandryIds[i]][animalId].z = z
 
                         if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
                     end
 
+                    if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
                 end
+            else
+                animalsToSink = animalsToSink + #husbandry.animalIdToCluster
+                if animalIdToPos[husbandry.husbandryId] == nil then animalIdToPos[husbandry.husbandryId] = {} end
 
-                if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
+                for animalId, _ in pairs(husbandry.animalIdToCluster) do
+                    local x, _, z = getAnimalPosition(husbandry.husbandryId, animalId)
+                    if indoorMask:getIsIndoorAtWorldPosition(x, z) then continue end
+                    local heightUnderAnimal = snowSystem:getSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1)
 
+                    local oldX, oldZ
+                    if animalIdToPos[husbandry.husbandryId][animalId] ~= nil then
+                        oldX = animalIdToPos[husbandry.husbandryId][animalId].x
+                        oldZ = animalIdToPos[husbandry.husbandryId][animalId].z
+                    else
+                        animalIdToPos[husbandry.husbandryId][animalId] = {}
+                    end
+
+                    if heightUnderAnimal > 0.05 and (oldX ~= x or oldZ ~= z) then
+                        snowSystem:setSnowHeightAtArea(x, z, x + 1, z + 1, x - 1, z - 1, heightUnderAnimal * 0.75)
+                    end
+
+                    animalsSunk = animalsSunk + 1
+                    animalIdToPos[husbandry.husbandryId][animalId].x = x
+                    animalIdToPos[husbandry.husbandryId][animalId].z = z
+
+                    if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
+                end
+            end
+
+            if animalsSunk >= RW_Weather.FACTOR.MAX_ANIMALS_SINK then break end
+        end
+    end
+
+    animalStepCount = 0
+end
+
+
+function RW_Weather:update(superFunc, dT)
+    -- RW_CRITICAL_FIX: call base GIANTS update first and keep fallback safety
+    local okBase = pcall(RW_WEATHER_ORIGINAL_UPDATE or superFunc, self, dT)
+    if not okBase then return end
+
+    local okCustom = pcall(function()
+        local timescale = dT * g_currentMission:getEffectiveTimeScale()
+        local _, currentWeather = self.forecast:dataForTime(self.owner.currentMonotonicDay, self.owner.dayTime)
+        local minTemp, maxTemp = self.temperatureUpdater:getCurrentValues()
+
+        if currentWeather ~= nil and currentWeather.isBlizzard and self.blizzardsEnabled and (maxTemp > 0 or minTemp > -8) then
+            minTemp = math.random(-15, -8)
+            maxTemp = math.random(minTemp + 3, minTemp + 8)
+            self.temperatureUpdater:setTargetValues(minTemp, maxTemp, true)
+        end
+
+        if currentWeather ~= nil and currentWeather.isDraught and self.droughtsEnabled and (maxTemp < 35 or minTemp < 30) then
+            minTemp = math.random(30, 35)
+            maxTemp = math.random(minTemp + 5, minTemp + 15)
+            self.temperatureUpdater:setTargetValues(minTemp, maxTemp, true)
+        end
+
+        -- RW_COMPAT_FIX: additive snow extension without overriding SnowSystem.MAX_HEIGHT globally
+        self.isBlizzard = currentWeather ~= nil and currentWeather.isBlizzard and self.blizzardsEnabled
+        if g_currentMission.missionInfo.isSnowEnabled and self:getIsSnowing() and self.isBlizzard then
+            local temperature = self.temperatureUpdater:getTemperatureAtTime(self.owner.dayTime)
+            if temperature < 10 then
+                local extraSnow = RW_Weather.FACTOR.SNOW_FACTOR * (timescale / WEATHER_TIME_SCALE_DENOMINATOR) * self:getSnowFallScale() * BLIZZARD_EXTRA_MULTIPLIER
+                self.snowHeight = math.clamp(self.snowHeight + extraSnow, 0, RW_Weather.FACTOR.SNOW_HEIGHT)
+                g_currentMission.snowSystem:setSnowHeight(self.snowHeight)
             end
         end
 
-        animalStepCount = 0
+        local indoorMask = g_currentMission.indoorMask
+        local hail = self:getHailFallScale()
+        if hail > 0 then
+            local vehicles = g_currentMission.vehicleSystem.vehicles
+            for _, vehicle in pairs(vehicles) do
+                local wearable = vehicle.spec_wearable
+                if wearable == nil then continue end
+                local x, _, z = getWorldTranslation(vehicle.rootNode)
+                if x == nil or z == nil then continue end
+                if indoorMask:getIsIndoorAtWorldPosition(x, z) then continue end
 
+                local damageAmount = hail * 0.0006 * (timescale / 100000)
+                local wearAmount = hail * 0.0018 * (timescale / 100000)
+                wearable:addWearAmount(wearAmount, true)
+                wearable:addDamageAmount(damageAmount, true)
+            end
+        end
+
+        local rainfall = self:getRainFallScale()
+        local snowfall = self:getSnowFallScale()
+        local hailfall = self:getHailFallScale()
+        if rainfall > 0 or snowfall > 0 then
+            local items = g_currentMission.itemSystem.itemByUniqueId
+            local balesToDelete = {}
+            for _, item in pairs(items) do
+                if g_currentMission.objectsToClassName[item] == "Bale" and item.fillLevel ~= nil and item.nodeId ~= 0 and item.wrappingState == 0 and (item.fillType == FillType.SILAGE or item.fillType == FillType.GRASS_WINDROW or item.fillType == FillType.DRYGRASS_WINDROW) then
+                    local x, _, z = getWorldTranslation(item.nodeId)
+                    if indoorMask:getIsIndoorAtWorldPosition(x, z) then continue end
+                    item.fillLevel = math.max(item.fillLevel - (rainfall + (snowfall * 0.4)) * 0.0001 * timescale, 0)
+                    if item.fillLevel <= 0 then table.insert(balesToDelete, item) end
+                end
+            end
+            for i = #balesToDelete, 1, -1 do balesToDelete[i]:delete() end
+        end
+
+        local draughtFactor = currentWeather ~= nil and currentWeather.isDraught and self.droughtsEnabled and 1.33 or 1
+        local temp = self.temperatureUpdater:getTemperatureAtTime(self.owner.dayTime)
+        local hour = math.floor(self.owner:getMinuteOfDay() / 60)
+        local daylightStart, dayLightEnd, _, _ = self.owner.daylight:getDaylightTimes()
+        local moistureSystem = g_currentMission.moistureSystem
+        local moistureDelta = math.clamp((rainfall + snowfall * 0.75 + hailfall * 0.15) * 0.009 * (timescale / 100000), 0, 0.00005) * moistureSystem.moistureGainModifier
+        local sunFactor = (hour >= daylightStart and hour < dayLightEnd and 1) or 0.33
+
+        if temp >= 45 then
+            moistureDelta = moistureDelta - (temp * 0.000012 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
+        elseif temp >= 35 then
+            moistureDelta = moistureDelta - (temp * 0.0000088 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
+        elseif temp >= 25 then
+            moistureDelta = moistureDelta - (temp * 0.0000038 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
+        elseif temp >= 15 then
+            moistureDelta = moistureDelta - (temp * 0.0000012 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
+        elseif temp > 0 then
+            moistureDelta = moistureDelta - (temp * 0.0000005 * (timescale / 100000) * sunFactor * draughtFactor) * moistureSystem.moistureLossModifier
+        end
+
+        g_currentMission.grassMoistureSystem:update(moistureDelta)
+        moistureSystem:update(moistureDelta, timescale)
+        updateAnimalSnowTracks(self, indoorMask)
+    end)
+
+    if not okCustom then
+        -- RW_CRITICAL_FIX: custom weather extension must never break base weather update
+        return
     end
-
     animalStepCount = animalStepCount + 1
 
 end
