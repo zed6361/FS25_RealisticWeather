@@ -114,6 +114,8 @@ function FireSystem:update(timescale, updateCache)
         
         if self.fieldId ~= nil then self:endFire() end
 
+        -- RW_CRITICAL_FIX: stop iteration loop when fire table is empty
+        self.updateIteration = 1
         return
 
     end
@@ -122,7 +124,19 @@ function FireSystem:update(timescale, updateCache)
 
     for _, fire in pairs(self.fires) do fire.timeSinceLastUpdate = fire.timeSinceLastUpdate + timeSinceLastUpdate end
 
-    local needsDeletion = self.fires[self.updateIteration]:update(self, self.isRaining)
+    -- RW_CRITICAL_FIX: prevent index-out-of-bounds and nil fire access during MP mutations
+    if self.updateIteration == nil or self.updateIteration < 1 or self.updateIteration > #self.fires then
+        print(string.format("RealisticWeather: fire iteration corrected (%s -> 1, fireCount=%s)", tostring(self.updateIteration), tostring(#self.fires)))
+        self.updateIteration = 1
+    end
+
+    local currentFire = self.fires[self.updateIteration]
+    if currentFire == nil then
+        self.updateIteration = 1
+        return
+    end
+
+    local needsDeletion = currentFire:update(self, self.isRaining)
 
     if needsDeletion then
 
@@ -133,7 +147,9 @@ function FireSystem:update(timescale, updateCache)
 
     if updateCache then
 
-        self.isRaining = g_currentMission.environment.weather.timeSinceLastRain == 0
+        -- RW_CRITICAL_FIX: guard weather access for deterministic fire shutdown in rain
+        local weather = g_currentMission.environment ~= nil and g_currentMission.environment.weather or nil
+        self.isRaining = weather ~= nil and weather.timeSinceLastRain ~= nil and weather.timeSinceLastRain == 0
         
         local px, pz
         
@@ -176,7 +192,12 @@ function FireSystem:startFire(x, z, fieldId)
 
     g_currentMission:addIngameNotification(FSBaseMission.INGAME_NOTIFICATION_CRITICAL, string.format("Fire started on field %d", fieldId))
 
-    g_server:broadcastEvent(FireEvent.new(1, 0, fieldId, self.fires))
+    -- RW_MP_FIX: clone array before broadcast to avoid race with update/remove
+    local fireSnapshot = {}
+    for i = 1, #self.fires do
+        fireSnapshot[i] = self.fires[i]
+    end
+    g_server:broadcastEvent(FireEvent.new(1, 0, fieldId, fireSnapshot))
 
 end
 

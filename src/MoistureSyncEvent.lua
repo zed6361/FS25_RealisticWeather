@@ -9,22 +9,39 @@ function MoistureSyncEvent.emptyNew()
 end
 
 
-function MoistureSyncEvent.new(rows, isReset)
+function MoistureSyncEvent.new(rows, isReset, sequence, previousSequence, isResyncRequest)
 
     local self = MoistureSyncEvent.emptyNew()
 
     self.rows = rows
     self.isReset = isReset or false
+    self.sequence = sequence or 0
+    self.previousSequence = previousSequence or 0
+    self.isResyncRequest = isResyncRequest or false
 
     return self
 
+end
+
+function MoistureSyncEvent.sendResyncRequest()
+    if g_client == nil then return end
+    g_client:getServerConnection():sendEvent(MoistureSyncEvent.new({}, false, 0, 0, true))
 end
 
 
 function MoistureSyncEvent:readStream(streamId, connection)
 
     self.isReset = streamReadBool(streamId)
+    self.isResyncRequest = streamReadBool(streamId)
+    self.sequence = streamReadUInt16(streamId)
+    self.previousSequence = streamReadUInt16(streamId)
     local rows = {}
+
+    if self.isResyncRequest then
+        self.rows = rows
+        self:run(connection)
+        return
+    end
 
     if self.isReset then
 
@@ -111,6 +128,13 @@ end
 function MoistureSyncEvent:writeStream(streamId, connection)
 
     streamWriteBool(streamId, self.isReset)
+    streamWriteBool(streamId, self.isResyncRequest)
+    streamWriteUInt16(streamId, self.sequence or 0)
+    streamWriteUInt16(streamId, self.previousSequence or 0)
+
+    if self.isResyncRequest then
+        return
+    end
 
     if self.isReset then
 
@@ -187,10 +211,19 @@ function MoistureSyncEvent:run(connection)
 
     if moistureSystem == nil then return end
 
+    if self.isResyncRequest and g_server ~= nil and connection ~= nil then
+        -- RW_MP_FIX: deterministic fallback full resync for sequence mismatch
+        connection:sendEvent(MoistureSyncEvent.new(moistureSystem.rows, true, moistureSystem.syncSequence or 0, moistureSystem.syncSequence or 0, false))
+        return
+    end
+
     if self.isReset then
-        moistureSystem:applyResetFromSync(self.rows, self.numRows, self.numColumns, self.cellWidth, self.cellHeight)
+        moistureSystem:applyResetFromSync(self.rows, self.numRows, self.numColumns, self.cellWidth, self.cellHeight, self.sequence)
     else
-        moistureSystem:applyUpdaterSync(self.rows)
+        local success = moistureSystem:applyUpdaterSync(self.rows, self.sequence, self.previousSequence)
+        if not success and g_client ~= nil then
+            MoistureSyncEvent.sendResyncRequest()
+        end
     end
 
 end

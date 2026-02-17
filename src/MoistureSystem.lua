@@ -75,6 +75,8 @@ function MoistureSystem.new()
     self.irrigationInputField = nil
 
     self.needsSync = false
+    self.syncSequence = 0
+    self.lastAppliedSyncSequence = 0
 
     self.witheringEnabled = true
     self.witheringChance = 1
@@ -398,7 +400,8 @@ function MoistureSystem:generateNewMapMoisture(xmlFile, force)
 
     if force then
 
-        local event = MoistureSyncEvent.new(self.rows, true)
+        self.syncSequence = self.syncSequence + 1
+        local event = MoistureSyncEvent.new(self.rows, true, self.syncSequence, self.syncSequence)
 
         if self.isServer then
             g_server:broadcastEvent(event)
@@ -614,9 +617,11 @@ function MoistureSystem:update(delta, timescale)
         self.updateIterations[self.currentUpdateIteration].timeSinceLastUpdate = 0
         self.updateIterations[self.currentUpdateIteration].cacheUpdatePending = false
 
-        if updater.pendingSync ~= nil then
+        if updater.pendingSync ~= nil and updater.pendingSync.numRows ~= nil and updater.pendingSync.numRows > 0 then
 
-            local event = MoistureSyncEvent.new(updater.pendingSync)
+            -- RW_PERF_FIX: row-delta sync with deterministic sequence numbers
+            moistureSystem.syncSequence = moistureSystem.syncSequence + 1
+            local event = MoistureSyncEvent.new(updater.pendingSync, false, moistureSystem.syncSequence, moistureSystem.syncSequence - 1)
 
             if self.isServer then
                 g_server:broadcastEvent(event)
@@ -1120,7 +1125,12 @@ function MoistureSystem.onSettingChanged(name, state)
 
         for _, updater in pairs(moistureSystem.updateIterations) do
 
-            local event = MoistureSyncEvent.new(updater.pendingSync)
+            if updater.pendingSync == nil or updater.pendingSync.numRows == nil or updater.pendingSync.numRows <= 0 then
+                continue
+            end
+
+            moistureSystem.syncSequence = moistureSystem.syncSequence + 1
+            local event = MoistureSyncEvent.new(updater.pendingSync, false, moistureSystem.syncSequence, moistureSystem.syncSequence - 1)
 
             if moistureSystem.isServer then
                 g_server:broadcastEvent(event)
@@ -1189,14 +1199,22 @@ function MoistureSystem:getRandomCell()
 end
 
 
-function MoistureSystem:applyUpdaterSync(rows)
+function MoistureSystem:applyUpdaterSync(rows, sequence, previousSequence)
+    -- RW_MP_FIX: deterministic ordering + mismatch detection
+    if previousSequence ~= nil and self.lastAppliedSyncSequence ~= nil and previousSequence ~= self.lastAppliedSyncSequence then
+        print(string.format("RealisticWeather: moisture sync mismatch (expected prev=%s, got prev=%s, seq=%s)", tostring(self.lastAppliedSyncSequence), tostring(previousSequence), tostring(sequence)))
+        return false
+    end
 
     for _, row in pairs(rows) do self:setValuesAtCoords(row.x, row.z, row.targets) end
+    self.lastAppliedSyncSequence = sequence or self.lastAppliedSyncSequence
+
+    return true
 
 end
 
 
-function MoistureSystem:applyResetFromSync(rows, numRows, numColumns, cellWidth, cellHeight)
+function MoistureSystem:applyResetFromSync(rows, numRows, numColumns, cellWidth, cellHeight, sequence)
 
     self.rows, self.numRows, self.numColumns, self.cellWidth, self.cellHeight = rows, numRows, numColumns, cellWidth, cellHeight
 
@@ -1208,6 +1226,7 @@ function MoistureSystem:applyResetFromSync(rows, numRows, numColumns, cellWidth,
     end
 
     self.currentUpdateIteration = 1
+    self.lastAppliedSyncSequence = sequence or self.lastAppliedSyncSequence
 
     for _, irrigatingField in pairs(self.irrigatingFields) do irrigatingField.isActive = false end
 

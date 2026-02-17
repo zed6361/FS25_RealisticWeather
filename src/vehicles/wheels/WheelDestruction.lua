@@ -1,7 +1,9 @@
 RW_WheelDestruction = {}
 RW_WheelDestruction.TICKS_PER_DESTRUCTION = 12
 
-function RW_WheelDestruction:destroySnowArea(_, x0, z0, x1, z1, x2, z2)
+function RW_WheelDestruction:destroySnowArea(superFunc, x0, z0, x1, z1, x2, z2)
+    -- RW_COMPAT_FIX: preserve base / MoreRealistic snow destruction first
+    pcall(superFunc, self, x0, z0, x1, z1, x2, z2)
 
     local snowSystem = g_currentMission.snowSystem
     local snowHeight = snowSystem:getSnowHeightAtArea(x0, z0, x1, z1, x2, z2)
@@ -15,7 +17,13 @@ function RW_WheelDestruction:destroySnowArea(_, x0, z0, x1, z1, x2, z2)
 
         if self.vehicle.spec_wheels ~= nil and self.vehicle.spec_wheels.wheels ~= nil then wheels = #self.vehicle.spec_wheels.wheels end
 
-        local wheelsFull = self.vehicle.spec_wheels.wheels
+        local wheelsFull = self.vehicle.spec_wheels ~= nil and self.vehicle.spec_wheels.wheels or nil
+        if wheelsFull == nil then
+            if self.wheel ~= nil and self.wheel.physics ~= nil then
+                self.wheel.physics.snowHeight = snowHeight
+            end
+            return
+        end
         for _, wheel in pairs(wheelsFull) do
             if wheel.visualWheels ~= nil and #wheel.visualWheels > 1 then
                 wheels = wheels + #wheel.visualWheels - 1
@@ -51,6 +59,7 @@ function RW_WheelDestruction:destroySnowArea(_, x0, z0, x1, z1, x2, z2)
 
         if snowHeight > sinkHeight then
 
+            -- RW_COMPAT_FIX: additive post-adjustment, never replace full base calculation
             snowSystem:setSnowHeightAtArea(x0, z0, x1, z1, x2, z2, sinkHeight)
             self.ticksSinceLastDestruction = 0
 
@@ -58,7 +67,9 @@ function RW_WheelDestruction:destroySnowArea(_, x0, z0, x1, z1, x2, z2)
     end
 
 
-    self.wheel.physics.snowHeight = sinkHeight or snowHeight
+    if self.wheel ~= nil and self.wheel.physics ~= nil then
+        self.wheel.physics.snowHeight = sinkHeight or snowHeight
+    end
 
 
     self.ticksSinceLastDestruction = self.ticksSinceLastDestruction >= RW_WheelDestruction.TICKS_PER_DESTRUCTION - 1 and RW_WheelDestruction.TICKS_PER_DESTRUCTION or self.ticksSinceLastDestruction + 1
