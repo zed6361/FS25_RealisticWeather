@@ -1,8 +1,9 @@
+
 ExtendedSprayer = {}
 
 
 function ExtendedSprayer.prerequisitesPresent(specializations)
-	return SpecializationUtil.hasSpecialization(Sprayer, specializations)
+    return SpecializationUtil.hasSpecialization(Sprayer, specializations)
 end
 
 
@@ -10,15 +11,19 @@ function ExtendedSprayer.registerFunctions(vehicleType) end
 
 
 function ExtendedSprayer.registerOverwrittenFunctions(vehicleType)
-	SpecializationUtil.registerOverwrittenFunction(vehicleType, "processSprayerArea", ExtendedSprayer.processSprayerArea)
-	SpecializationUtil.registerOverwrittenFunction(vehicleType, "getSprayerUsage", ExtendedSprayer.getSprayerUsage)
-	SpecializationUtil.registerOverwrittenFunction(vehicleType, "updateSprayerEffects", ExtendedSprayer.updateSprayerEffects)
+    SpecializationUtil.registerOverwrittenFunction(vehicleType, "processSprayerArea", ExtendedSprayer.processSprayerArea)
+    SpecializationUtil.registerOverwrittenFunction(vehicleType, "getSprayerUsage", ExtendedSprayer.getSprayerUsage)
+    SpecializationUtil.registerOverwrittenFunction(vehicleType, "updateSprayerEffects", ExtendedSprayer.updateSprayerEffects)
 end
 
 
 function ExtendedSprayer:processSprayerArea(superFunc, workArea, dt)
 
-	local changedArea, totalArea = superFunc(self, workArea, dT)
+    local changedArea, totalArea = superFunc(self, workArea, dt)
+
+    if changedArea <= 0 then
+        return changedArea, totalArea
+    end
 
     if self.isServer then
 
@@ -27,6 +32,9 @@ function ExtendedSprayer:processSprayerArea(superFunc, workArea, dt)
         if moistureSystem == nil then return changedArea, totalArea end
 
         local fillType = self.spec_sprayer.workAreaParameters.sprayFillType
+        if fillType == nil or fillType == FillType.UNKNOWN then
+            return changedArea, totalArea
+        end
 
         local factor = MoistureSystem.SPRAY_FACTOR[self.spec_sprayer.isSlurryTanker and "slurry" or "fertilizer"]
 
@@ -35,30 +43,36 @@ function ExtendedSprayer:processSprayerArea(superFunc, workArea, dt)
         local sx, _, sz = getWorldTranslation(workArea.start)
         local wx, _, wz = getWorldTranslation(workArea.width)
         local hx, _, hz = getWorldTranslation(workArea.height)
-        
-        local width = wx - sx
-        local height = wz - sz
 
-        local realWidth = MathUtil.vector2Length(wx - sx, wz - sz) * 2
-        local realHeightX = (hx - sx) * 0.5
-        local realHeightZ = (hz - sz) * 0.5
+        local widthX = wx - sx
+        local widthZ = wz - sz
+        local heightX = hx - sx
+        local heightZ = hz - sz
+
+        local widthSamples = math.max(1, math.floor(MathUtil.vector2Length(widthX, widthZ) * 2))
+        local heightSamples = math.max(1, math.floor(MathUtil.vector2Length(heightX, heightZ) * 2))
 
         local fieldGroundSystem = g_currentMission.fieldGroundSystem
- 
-        local stepX = width / realWidth
-        local stepZ = height / realWidth
 
-        for i = 0, realWidth do
+        for i = 0, widthSamples do
 
-            local x = sx + realHeightX + stepX * i
-            local z = sz + realHeightZ + stepZ * i
+            local widthFactor = i / widthSamples
 
-            local groundTypeValue = fieldGroundSystem:getValueAtWorldPos(FieldDensityMap.GROUND_TYPE, x, 0, z)
-	        local groundType = FieldGroundType.getTypeByValue(groundTypeValue)
-                
-            if groundType == FieldGroundType.NONE then continue end
+            for j = 0, heightSamples do
 
-            moistureSystem:setValuesAtCoords(x, z, target, true)
+                local heightFactor = j / heightSamples
+
+                local x = sx + widthX * widthFactor + heightX * heightFactor
+                local z = sz + widthZ * widthFactor + heightZ * heightFactor
+
+                local groundTypeValue = fieldGroundSystem:getValueAtWorldPos(FieldDensityMap.GROUND_TYPE, x, 0, z)
+                local groundType = FieldGroundType.getTypeByValue(groundTypeValue)
+
+                if groundType ~= FieldGroundType.NONE then
+                    moistureSystem:setValuesAtCoords(x, z, target, true)
+                end
+
+            end
 
         end
 
@@ -72,7 +86,7 @@ end
 function ExtendedSprayer:getSprayerUsage(superFunc, fillType, dT)
 
     local usage = superFunc(self, fillType, dT)
-    
+
     if fillType == FillType.WATER then usage = usage * 0.14 end
 
     return usage
@@ -84,31 +98,34 @@ function ExtendedSprayer:updateSprayerEffects(superFunc, force)
 
     local spec = self.spec_sprayer
 
+    local fillType = self:getFillUnitLastValidFillType(self:getSprayerFillUnitIndex())
+    if fillType == FillType.UNKNOWN then
+        fillType = self:getFillUnitFirstSupportedFillType(self:getSprayerFillUnitIndex())
+    end
+
+    if fillType ~= FillType.WATER then
+        return superFunc(self, force)
+    end
+
     local effectsState = self:getAreEffectsVisible()
     if effectsState ~= spec.lastEffectsState or force then
 
         if effectsState then
 
-            local fillType = self:getFillUnitLastValidFillType(self:getSprayerFillUnitIndex())
-            if fillType == FillType.UNKNOWN then
-                fillType = self:getFillUnitFirstSupportedFillType(self:getSprayerFillUnitIndex())
-            end
+            g_effectManager:setEffectTypeInfo(spec.effects, FillType.LIQUIDFERTILIZER)
+            g_effectManager:startEffects(spec.effects)
+            g_soundManager:playSamples(spec.samples.spray)
+            g_animationManager:startAnimations(spec.animationNodes)
 
-            if fillType == FillType.WATER then
+            spec.lastEffectsState = effectsState
 
-                g_effectManager:setEffectTypeInfo(spec.effects, FillType.LIQUIDFERTILIZER)
-                g_effectManager:startEffects(spec.effects)
-                g_soundManager:playSamples(spec.samples.spray)
-                g_animationManager:startAnimations(spec.animationNodes)
+        else
+            g_effectManager:stopEffects(spec.effects)
+            g_animationManager:stopAnimations(spec.animationNodes)
 
-                spec.lastEffectsState = effectsState
-
-            end
+            spec.lastEffectsState = effectsState
 
         end
 
     end
-
-    superFunc(self, force)
-
 end

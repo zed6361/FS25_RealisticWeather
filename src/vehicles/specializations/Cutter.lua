@@ -1,14 +1,38 @@
+-- Cutter.lua (RW_Cutter)
+-- Override di Cutter.processCutterArea per integrare la logica di umidità
+-- di RealisticWeather nel ciclo di raccolta della mietitrebbia.
+--
+-- Rispetto alla funzione vanilla, questo override:
+--   1. Verifica che il moistureSystem sia disponibile (fallback vanilla se assente)
+--   2. Esegue FSDensityMapUtil.cutFruitArea per ogni fruitType nella lista di priorità
+--   3. Legge l'umidità media del terreno nei tre punti della work area (start/width/height)
+--   4. Chiama getHarvestScaleMultiplier con l'umidità come parametro aggiuntivo
+--      per scalare lastMultiplierArea (usata dalla mietitrebbia per il calcolo litri)
+--   5. Gestisce la logica del chopper area (paglia/stocchi) invariata rispetto al vanilla
+--   6. Aggiorna tutti i workAreaParameters di spec_cutter (lastArea, lastMultiplierArea,
+--      currentGrowthState, currentInputFruitType, ecc.)
+--
+-- Solo il primo fruitType che produce area > 0 viene processato (break dopo il primo match).
+-- Non chiama la superFunc vanilla se combineVehicle è presente: è una reimplementazione completa.
+-- Ritorna (0, 0) se la cutter non è collegata a una mietitrebbia.
+
 RW_Cutter = {}
 
 
+-- Override di Cutter.processCutterArea.
+-- @param workArea  work area della cutter con nodi start/width/height
+-- @param dt        delta time in ms
+-- @return lastArea accumulata, lastTotalArea dell'ultimo fruitType processato
 function RW_Cutter:processCutterArea(superFunc, workArea, dt)
 
     local moistureSystem = g_currentMission.moistureSystem
 
+    -- Se il moistureSystem non è disponibile, usa la logica vanilla.
     if moistureSystem == nil then return superFunc(self, workArea, dt) end
 
     local spec = self.spec_cutter
 
+    -- La logica RW si attiva solo quando la cutter è collegata a una mietitrebbia.
     if spec.workAreaParameters.combineVehicle ~= nil then
         local fieldGroundSystem = g_currentMission.fieldGroundSystem
 
@@ -20,6 +44,7 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
         local lastMultiplierArea = 0
         local lastTotalArea = 0
 
+        -- Itera sui fruitType in ordine di priorità; si ferma al primo che produce area.
         for _, fruitTypeIndex in ipairs(spec.workAreaParameters.fruitTypeIndicesToUse) do
             local fruitTypeDesc = g_fruitTypeManager:getFruitTypeByIndex(fruitTypeIndex)
             local excludedSprayType = fieldGroundSystem:getChopperTypeValue(fruitTypeDesc.chopperType)
@@ -29,6 +54,7 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
                 lastTotalArea = lastTotalArea + totalArea
 
                 if self.isServer then
+                    -- Aggiornamento growthState con debounce: cambia solo dopo 500ms o 1s di stabilità.
                     if growthState ~= spec.currentGrowthState then
                         spec.currentGrowthStateTimer = spec.currentGrowthStateTimer + dt
                         if spec.currentGrowthStateTimer > 500 or spec.currentGrowthStateTime + 1000 < g_time then
@@ -40,6 +66,7 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
                         spec.currentGrowthStateTime = g_time
                     end
 
+                    -- Cambio fruitType: aggiorna outputFillType, conversionFactor e altezza di taglio.
                     if fruitTypeIndex ~= spec.currentInputFruitType then
                         spec.currentInputFruitType = fruitTypeIndex
                         spec.currentGrowthState = growthState
@@ -63,6 +90,7 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
                     spec.useWindrow = false
                 end
 
+                -- Lettura umidità media nei tre punti della work area.
                 local target = { "moisture" }
 
                 local startMoistureValues = moistureSystem:getValuesAtCoords(xs, zs, target)
@@ -77,16 +105,18 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
 
                 local averageMoisture = (startMoisture + widthMoisture + heightMoisture) / 3
 
+                -- Il moltiplicatore include l'umidità del terreno come fattore aggiuntivo.
                 local multiplier = g_currentMission:getHarvestScaleMultiplier(fruitTypeIndex, sprayFactor, plowFactor, limeFactor, weedFactor, stubbleFactor, rollerFactor, beeYieldBonusPerc, averageMoisture)
 
                 lastArea = area
                 lastMultiplierArea = area * multiplier
 
                 spec.workAreaParameters.lastFruitType = fruitTypeIndex
-                break
+                break  -- Processa solo il primo fruitType che produce area.
             end
         end
 
+        -- Gestione chopper area: deposita paglia/stocchi o haulm dopo il taglio.
         if lastArea > 0 then
             if workArea.chopperAreaIndex ~= nil and spec.workAreaParameters.lastFruitType ~= nil then
                 local chopperWorkArea = self:getWorkAreaByIndex(workArea.chopperAreaIndex)
@@ -97,11 +127,13 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
 
                     local fruitTypeDesc = g_fruitTypeManager:getFruitTypeByIndex(spec.workAreaParameters.lastFruitType)
                     if fruitTypeDesc.chopperType ~= nil then
+                        -- Deposita il tipo di suolo del chopper (es. paglia tritata).
                         local strawGroundType = FieldChopperType.getValueByType(fruitTypeDesc.chopperType)
                         if strawGroundType ~= nil then
                             FSDensityMapUtil.setGroundTypeLayerArea(xs, zs, xw, zw, xh, zh, strawGroundType)
                         end
                     elseif fruitTypeDesc.chopperUseHaulm then
+                        -- Deposita le foglie/stocchi (haulm) e rimuove le tracce dei pneumatici.
                         local area = FSDensityMapUtil.updateFruitHaulmArea(spec.workAreaParameters.lastFruitType, xs, zs, xw, zw, xh, zh)
 
                         if area > 0 then
@@ -119,12 +151,14 @@ function RW_Cutter:processCutterArea(superFunc, workArea, dt)
             spec.isWorking = true
         end
 
+        -- Accumula lastArea e lastMultiplierArea nei workAreaParameters.
         spec.workAreaParameters.lastArea = spec.workAreaParameters.lastArea + lastArea
         spec.workAreaParameters.lastMultiplierArea = spec.workAreaParameters.lastMultiplierArea + lastMultiplierArea
 
         return spec.workAreaParameters.lastArea, lastTotalArea
     end
 
+    -- Se non collegata a una mietitrebbia, non processa nulla.
     return 0, 0
 end
 

@@ -1,3 +1,30 @@
+-- Drivable.lua (RW_Drivable)
+-- Override di VehicleMotor.getBrakeForce per simulare una frenata realistica
+-- che dipende dalla frizione effettiva generata da ciascun pneumatico.
+--
+-- Logica originale vanilla: restituiva un valore statico (self.brakeForce) senza
+-- tener conto delle condizioni del terreno, del tipo di pneumatico o del numero di ruote.
+--
+-- Logica RW:
+--   1. Legge tireGroundFrictionCoeff da ogni ruota (già aggiornato da WheelPhysics.updateFriction)
+--   2. Gestisce le ruote gemellate (visualWheels > 1): ogni ruota gemellata conta separatamente
+--      e contribuisce con la stessa frizione della ruota madre
+--   3. Calcola la frizione media su tutte le ruote
+--   4. Scala la forza di frenata: brakeForce × frizione_media × (numRuote / 4)
+--      I cingoli (CRAWLER) usano un fattore fisso di 4 invece del conteggio ruote
+--      (equivale a brakeForce × frizione_media, indipendentemente dal numero di segmenti)
+--   5. Il risultato è clampato a un minimo del 5% del brakeForce base
+--      per garantire sempre una frenata minima di sicurezza
+--
+-- Effetti pratici:
+--   - Pneumatici stretti su neve: più grip → frenata più efficace
+--   - Pneumatici larghi su bagnato: meno grip → frenata più lunga
+--   - Ruote gemellate: aumentano il numero totale → frenata migliore
+--   - Cingoli: frizione alta ma fattore fisso → comportamento stabile
+--
+-- Override registrato su VehicleMotor (non su Drivable) perché getBrakeForce
+-- è definita in VehicleMotor in FS25.
+
 RW_Drivable = {}
 
 -- ##################################################################################################################################################
@@ -17,6 +44,10 @@ RW_Drivable = {}
 
 -- ##################################################################################################################################################
 
+
+-- Override di VehicleMotor.getBrakeForce.
+-- Calcola la forza di frenata effettiva in base alla frizione media di tutti i pneumatici.
+-- @return forza di frenata scalata [brakeForce × 0.05, brakeForce × frizione × numRuote/4]
 function RW_Drivable:getBrakeForce(_)
 
     local force = self.brakeForce
@@ -35,23 +66,29 @@ function RW_Drivable:getBrakeForce(_)
         local physics = wheel.physics
 
         friction = friction + physics.tireGroundFrictionCoeff
+        -- Rileva se almeno una ruota è un cingolo per usare il fattore fisso.
         local tireType = WheelsUtil.getTireTypeName(physics.tireType)
         if tireType == "CRAWLER" then isCrawler = true end
         frictionDefined = true
 
+        -- Ruote gemellate (visualWheels > 1): ogni ruota aggiuntiva conta separatamente.
         if #wheel.visualWheels <= 1 then continue end
 
         for i, visualWheel in pairs(wheel.visualWheels) do
-            if i == 1 then continue end
+            if i == 1 then continue end  -- La prima ruota è già contata sopra.
             friction = friction + physics.tireGroundFrictionCoeff
             totalWheels = totalWheels + 1
         end
 
     end
 
+    -- Se nessuna ruota ha frizione definita, usa il valore base invariato.
     if not frictionDefined then return force end
 
+    -- Frizione media su tutte le ruote (reali + gemellate).
     friction = friction / (totalWheels == 0 and 1 or totalWheels)
+    -- Scala la forza: cingoli usano fattore fisso 4, ruote normali usano conteggio effettivo.
+    -- Minimo garantito: 5% del brakeForce base per sicurezza.
     force = math.max(force * friction * ((isCrawler and 4 or totalWheels) / 4), force * 0.05)
 
     return force

@@ -4,6 +4,10 @@ function RW_Sprayer:processSprayerArea(superFunc, workArea, dT)
 
     local changedArea, totalArea = superFunc(self, workArea, dT)
 
+    if changedArea <= 0 then
+        return changedArea, totalArea
+    end
+
     if self.isServer then
 
         local moistureSystem = g_currentMission.moistureSystem
@@ -11,6 +15,7 @@ function RW_Sprayer:processSprayerArea(superFunc, workArea, dT)
         if moistureSystem == nil then return changedArea, totalArea end
 
         local fillType = self.spec_sprayer.workAreaParameters.sprayFillType
+        if fillType == nil or fillType == FillType.UNKNOWN then return changedArea, totalArea end
 
         local factor = MoistureSystem.SPRAY_FACTOR[self.spec_sprayer.isSlurryTanker and "slurry" or "fertilizer"]
 
@@ -19,30 +24,36 @@ function RW_Sprayer:processSprayerArea(superFunc, workArea, dT)
         local sx, _, sz = getWorldTranslation(workArea.start)
         local wx, _, wz = getWorldTranslation(workArea.width)
         local hx, _, hz = getWorldTranslation(workArea.height)
-        
-        local width = wx - sx
-        local height = wz - sz
 
-        local realWidth = MathUtil.vector2Length(wx - sx, wz - sz) * 2
-        local realHeightX = (hx - sx) * 0.5
-        local realHeightZ = (hz - sz) * 0.5
+        local widthX = wx - sx
+        local widthZ = wz - sz
+        local heightX = hx - sx
+        local heightZ = hz - sz
+
+        local widthSamples = math.max(1, math.floor(MathUtil.vector2Length(widthX, widthZ) * 2))
+        local heightSamples = math.max(1, math.floor(MathUtil.vector2Length(heightX, heightZ) * 2))
 
         local fieldGroundSystem = g_currentMission.fieldGroundSystem
- 
-        local stepX = width / realWidth
-        local stepZ = height / realWidth
 
-        for i = 0, realWidth do
+        for i = 0, widthSamples do
 
-            local x = sx + realHeightX + stepX * i
-            local z = sz + realHeightZ + stepZ * i
+            local widthFactor = i / widthSamples
 
-            local groundTypeValue = fieldGroundSystem:getValueAtWorldPos(FieldDensityMap.GROUND_TYPE, x, 0, z)
-	        local groundType = FieldGroundType.getTypeByValue(groundTypeValue)
-                
-            if groundType == FieldGroundType.NONE then continue end
+            for j = 0, heightSamples do
 
-            moistureSystem:setValuesAtCoords(x, z, target, true)
+                local heightFactor = j / heightSamples
+
+                local x = sx + widthX * widthFactor + heightX * heightFactor
+                local z = sz + widthZ * widthFactor + heightZ * heightFactor
+
+                local groundTypeValue = fieldGroundSystem:getValueAtWorldPos(FieldDensityMap.GROUND_TYPE, x, 0, z)
+                local groundType = FieldGroundType.getTypeByValue(groundTypeValue)
+
+                if groundType ~= FieldGroundType.NONE then
+                    moistureSystem:setValuesAtCoords(x, z, target, true)
+                end
+
+            end
 
         end
 
@@ -58,7 +69,7 @@ Sprayer.processSprayerArea = Utils.overwrittenFunction(Sprayer.processSprayerAre
 function RW_Sprayer:getSprayerUsage(superFunc, fillType, dT)
 
     local usage = superFunc(self, fillType, dT)
-    
+
     if fillType == FillType.WATER then usage = usage * 0.14 end
 
     return usage
@@ -67,42 +78,48 @@ end
 Sprayer.getSprayerUsage = Utils.overwrittenFunction(Sprayer.getSprayerUsage, RW_Sprayer.getSprayerUsage)
 
 
-function RW_Sprayer:updateSprayerEffects(force)
+function RW_Sprayer:updateSprayerEffects(superFunc, force)
 
     local spec = self.spec_sprayer
+
+    local fillType = self:getFillUnitLastValidFillType(self:getSprayerFillUnitIndex())
+    if fillType == FillType.UNKNOWN then
+        fillType = self:getFillUnitFirstSupportedFillType(self:getSprayerFillUnitIndex())
+    end
+
+    if fillType ~= FillType.WATER then
+        return superFunc(self, force)
+    end
 
     local effectsState = self:getAreEffectsVisible()
     if effectsState ~= spec.lastEffectsState or force then
 
         if effectsState then
 
-            local fillType = self:getFillUnitLastValidFillType(self:getSprayerFillUnitIndex())
-            if fillType == FillType.UNKNOWN then
-                fillType = self:getFillUnitFirstSupportedFillType(self:getSprayerFillUnitIndex())
+            g_effectManager:setEffectTypeInfo(spec.effects, FillType.LIQUIDFERTILIZER)
+            g_effectManager:startEffects(spec.effects)
+
+            g_soundManager:playSample(spec.samples.spray)
+
+            local sprayType = self:getActiveSprayType()
+            if sprayType ~= nil then
+                g_effectManager:setEffectTypeInfo(sprayType.effects, FillType.LIQUIDFERTILIZER)
+                g_effectManager:startEffects(sprayType.effects)
+
+                g_animationManager:startAnimations(sprayType.animationNodes)
+
+                g_soundManager:playSample(sprayType.samples.spray)
             end
 
-            if fillType == FillType.WATER then
+            g_animationManager:startAnimations(spec.animationNodes)
 
-                g_effectManager:setEffectTypeInfo(spec.effects, FillType.LIQUIDFERTILIZER)
-                g_effectManager:startEffects(spec.effects)
+            spec.lastEffectsState = effectsState
 
-                g_soundManager:playSample(spec.samples.spray)
+        else
+            g_effectManager:stopEffects(spec.effects)
+            g_animationManager:stopAnimations(spec.animationNodes)
 
-                local sprayType = self:getActiveSprayType()
-                if sprayType ~= nil then
-                    g_effectManager:setEffectTypeInfo(sprayType.effects, FillType.LIQUIDFERTILIZER)
-                    g_effectManager:startEffects(sprayType.effects)
-
-                    g_animationManager:startAnimations(sprayType.animationNodes)
-
-                    g_soundManager:playSample(sprayType.samples.spray)
-                end
-
-                g_animationManager:startAnimations(spec.animationNodes)
-
-                spec.lastEffectsState = effectsState
-
-            end
+            spec.lastEffectsState = effectsState
 
         end
 
@@ -110,4 +127,4 @@ function RW_Sprayer:updateSprayerEffects(force)
 
 end
 
-Sprayer.updateSprayerEffects = Utils.prependedFunction(Sprayer.updateSprayerEffects, RW_Sprayer.updateSprayerEffects)
+Sprayer.updateSprayerEffects = Utils.overwrittenFunction(Sprayer.updateSprayerEffects, RW_Sprayer.updateSprayerEffects)

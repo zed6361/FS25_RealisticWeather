@@ -1,10 +1,27 @@
+-- RWSettings.lua
+-- Sistema di impostazioni configurabili del mod RealisticWeather.
+-- Definisce 15 impostazioni (BinaryOption, MultiTextOption, Button) con indici, valori,
+-- callback e dipendenze tra controlli. Si integra nel menu impostazioni di FS clonando
+-- i controlli UI esistenti e iniettando i propri.
+-- Le impostazioni vengono caricate/salvate in rwSettings.xml nel savegame corrente.
+-- In multiplayer, le modifiche del client vengono trasmesse al server via RW_BroadcastSettingsEvent.
+
 RWSettings = {}
 local modDirectory = g_currentModDirectory
 
 g_gui:loadProfiles(modDirectory .. "gui/guiProfiles.xml")
 
+-- Tabella principale delle impostazioni. Ogni entry ha:
+--   index:          ordine di visualizzazione nel menu
+--   type:           tipo di controllo UI (BinaryOption / MultiTextOption / Button)
+--   default:        indice del valore predefinito nella lista values
+--   values:         lista dei valori possibili
+--   callback:       funzione chiamata quando l'impostazione cambia
+--   dynamicTooltip: se true, il tooltip cambia in base allo stato corrente
+--   dependancy:     blocca questo controllo se l'impostazione dipendente non ha lo stato atteso
 RWSettings.SETTINGS = {
 
+	-- Abilita/disabilita l'appassimento dei raccolti dovuto a carenza di umidità.
 	["witheringEnabled"] = {
 		["index"] = 2,
 		["type"] = "BinaryOption",
@@ -15,6 +32,8 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onSettingChanged
 	},
 
+	-- Moltiplicatore di probabilità di appassimento (0.5x – 1.5x).
+	-- Disabilitato se witheringEnabled è spento.
 	["witheringChance"] = {
 		["index"] = 3,
 		["type"] = "MultiTextOption",
@@ -28,6 +47,7 @@ RWSettings.SETTINGS = {
 		}
 	},
 
+	-- Pulsante per forzare la rigenerazione completa della mappa di umidità.
 	["rebuildMoistureMap"] = {
 		["index"] = 1,
 		["type"] = "Button",
@@ -35,6 +55,8 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onClickRebuildMoistureMap
 	},
 
+	-- Indice di performance: controlla la risoluzione della griglia di umidità.
+	-- Valori più alti = celle più piccole = maggiore precisione ma più carico CPU.
 	["performanceIndex"] = {
 		["index"] = 4,
 		["type"] = "MultiTextOption",
@@ -44,6 +66,7 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onSettingChanged
 	},
 
+	-- Modificatore guadagno umidità terreno (0.1x – 2.0x).
 	["moistureGainModifier"] = {
 		["index"] = 5,
 		["type"] = "MultiTextOption",
@@ -53,6 +76,7 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onSettingChanged
 	},
 
+	-- Modificatore perdita umidità terreno (0.1x – 2.0x).
 	["moistureLossModifier"] = {
 		["index"] = 6,
 		["type"] = "MultiTextOption",
@@ -62,6 +86,7 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onSettingChanged
 	},
 
+	-- Modificatore guadagno umidità erba (sistema GrassMoistureSystem separato).
 	["grassMoistureGainModifier"] = {
 		["index"] = 7,
 		["type"] = "MultiTextOption",
@@ -71,6 +96,7 @@ RWSettings.SETTINGS = {
 		["callback"] = GrassMoistureSystem.onSettingChanged
 	},
 
+	-- Modificatore perdita umidità erba.
 	["grassMoistureLossModifier"] = {
 		["index"] = 8,
 		["type"] = "MultiTextOption",
@@ -80,6 +106,7 @@ RWSettings.SETTINGS = {
 		["callback"] = GrassMoistureSystem.onSettingChanged
 	},
 
+	-- Comportamento dell'overlay visivo di umidità sul terreno (3 modalità).
 	["moistureOverlayBehaviour"] = {
 		["index"] = 9,
 		["type"] = "MultiTextOption",
@@ -89,6 +116,7 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onSettingChanged
 	},
 
+	-- Comportamento del frame dell'overlay (2 modalità).
 	["moistureFrameBehaviour"] = {
 		["index"] = 10,
 		["type"] = "BinaryOption",
@@ -98,6 +126,7 @@ RWSettings.SETTINGS = {
 		["callback"] = MoistureSystem.onSettingChanged
 	},
 
+	-- Abilita/disabilita le tempeste di neve (blizzard).
 	["blizzardsEnabled"] = {
 		["index"] = 11,
 		["type"] = "BinaryOption",
@@ -108,6 +137,7 @@ RWSettings.SETTINGS = {
 		["callback"] = RW_Weather.onSettingChanged
 	},
 
+	-- Abilita/disabilita la siccità (drought).
 	["droughtsEnabled"] = {
 		["index"] = 12,
 		["type"] = "BinaryOption",
@@ -118,6 +148,7 @@ RWSettings.SETTINGS = {
 		["callback"] = RW_Weather.onSettingChanged
 	},
 
+	-- Abilita/disabilita le pozzanghere.
 	["puddlesEnabled"] = {
 		["index"] = 13,
 		["type"] = "BinaryOption",
@@ -128,6 +159,7 @@ RWSettings.SETTINGS = {
 		["callback"] = PuddleSystem.onSettingChanged
 	},
 
+	-- Abilita/disabilita il sistema di incendi.
 	["fireEnabled"] = {
 		["index"] = 14,
 		["type"] = "BinaryOption",
@@ -138,6 +170,8 @@ RWSettings.SETTINGS = {
 		["callback"] = FireSystem.onSettingChanged
 	},
 
+	-- Fattore moltiplicativo dell'effetto dell'umidità sulla resa del raccolto (0 – 2.0x).
+	-- 0 = l'umidità non influenza la resa; 1 = effetto standard; >1 = effetto amplificato.
 	["moistureYieldFactor"] = {
 		["index"] = 15,
 		["type"] = "MultiTextOption",
@@ -149,11 +183,15 @@ RWSettings.SETTINGS = {
 
 }
 
+-- Template dei controlli UI clonati dal menu di FS durante initialize().
 RWSettings.BinaryOption = nil
 RWSettings.MultiTextOption = nil
 RWSettings.Button = nil
 
 
+-- Carica i valori delle impostazioni da rwSettings.xml nel savegame corrente.
+-- Chiamato solo sul server durante initialize().
+-- Se il file non esiste, le impostazioni mantengono il loro valore default.
 function RWSettings.loadFromXMLFile()
 
 	local savegameIndex = g_careerScreen.savegameList.selectedIndex
@@ -175,6 +213,7 @@ function RWSettings.loadFromXMLFile()
 
 				setting.state = xmlFile:getInt(key .. "." .. name .. "#value", setting.default)
 
+				-- Sicurezza: se il valore salvato è fuori range, usa l'ultimo valore disponibile.
 				if setting.state > #setting.values then setting.state = #setting.values end
 
 			end
@@ -188,6 +227,11 @@ function RWSettings.loadFromXMLFile()
 end
 
 
+-- Salva tutte le impostazioni in rwSettings.xml nel savegame corrente.
+-- Viene ricreato da zero ad ogni salvataggio (non aggiornamento incrementale).
+-- Chiamato solo sul server dopo ogni modifica a un'impostazione.
+-- @param name   nome dell'impostazione modificata (non usato direttamente, si salvano tutte)
+-- @param state  nuovo stato (non usato direttamente, si leggono tutti da setting.state)
 function RWSettings.saveToXMLFile(name, state)
 
 	if g_server ~= nil then
@@ -198,14 +242,9 @@ function RWSettings.saveToXMLFile(name, state)
 		if savegame ~= nil and savegame.savegameDirectory ~= nil then
 
 			local path = savegame.savegameDirectory .. "/rwSettings.xml"
-			--local xmlFile = XMLFile.loadIfExists("rwSettings", path)
 			local xmlFile = XMLFile.create("rwSettings", path, "settings")
 
-			--if xmlFile == nil then xmlFile = XMLFile.create("rwSettings", path, "settings") end
-
 			if xmlFile ~= nil then
-
-				--xmlFile:setInt("settings." .. name .. "#value", state)
 
 				for settingName, setting in pairs(RWSettings.SETTINGS) do
 					if setting.ignore then continue end
@@ -225,6 +264,11 @@ function RWSettings.saveToXMLFile(name, state)
 end
 
 
+-- Inizializza il sistema: carica le impostazioni dal savegame (solo server),
+-- poi inietta i controlli UI nel menu impostazioni di FS clonando i template esistenti.
+-- I controlli vengono inseriti in ordine di index, con label, testi e tooltip localizzati.
+-- Le dipendenze tra controlli vengono applicate subito dopo la creazione.
+-- Eseguita automaticamente al caricamento del file (ultima riga del modulo).
 function RWSettings.initialize()
 
 	if g_server ~= nil then RWSettings.loadFromXMLFile() end
@@ -234,6 +278,7 @@ function RWSettings.initialize()
 
 	local sectionHeader, binaryOptionElement, multiOptionElement, buttonElement
 
+	-- Cerca i template dei controlli UI nel pannello impostazioni di FS.
 	for _, element in pairs(scrollPanel.elements) do
 
 		if element.name == "sectionHeader" and sectionHeader == nil then sectionHeader = element:clone(scrollPanel) end
@@ -266,6 +311,7 @@ function RWSettings.initialize()
 
 	for _, setting in pairs(RWSettings.SETTINGS) do maxIndex = maxIndex < setting.index and setting.index or maxIndex end
 
+	-- Crea i controlli UI in ordine di index, clonando il template corretto per ogni tipo.
 	for i = 1, maxIndex do
 
 		for name, setting in pairs(RWSettings.SETTINGS) do
@@ -295,6 +341,11 @@ function RWSettings.initialize()
 
 						local texts = {}
 
+						-- Genera i testi visualizzati nel controllo in base al tipo di valore:
+						-- offOn → testi localizzati "Off"/"On"
+						-- int   → numero intero come stringa
+						-- float → percentuale formattata
+						-- altro → testo localizzato da file i18n
 						if setting.binaryType == "offOn" then
 							texts[1] = g_i18n:getText("rw_settings_off")
 							texts[2] = g_i18n:getText("rw_settings_on")
@@ -316,6 +367,7 @@ function RWSettings.initialize()
 						element:setTexts(texts)
 						element:setState(setting.state)
 
+						-- Tooltip dinamico: cambia in base allo stato corrente dell'impostazione.
 						if setting.dynamicTooltip then
 							element.elements[1]:setText(g_i18n:getText(settingsPrefix .. "tooltip_" .. setting.state))
 						else
@@ -324,11 +376,13 @@ function RWSettings.initialize()
 
 					end
 
+					-- L'id del controllo ha il prefisso "rws_" per essere identificato in onSettingChanged.
 					element.id = "rws_" .. name
 					element.onClickCallback = RWSettings.onSettingChanged
 
 					setting.element = element
 
+					-- Applica subito la dipendenza se il controllo da cui dipende è già stato creato.
 					if setting.dependancy then
 						local dependancy = RWSettings.SETTINGS[setting.dependancy.name]
 						if dependancy ~= nil and dependancy.element ~= nil then element:setDisabled(dependancy.state ~= setting.dependancy.state) end
@@ -345,12 +399,22 @@ function RWSettings.initialize()
 end
 
 
+-- Callback unificato per tutti i controlli UI di RealisticWeather.
+-- Identifica l'impostazione dall'id del controllo (prefisso "rws_"),
+-- chiama la callback specifica del sistema interessato,
+-- aggiorna le dipendenze tra controlli,
+-- aggiorna il tooltip dinamico se previsto,
+-- salva (server) o trasmette al server (client) la modifica.
+-- @param _      parametro ignorato (contesto UI)
+-- @param state  nuovo indice dello stato selezionato
+-- @param button elemento UI che ha generato l'evento
 function RWSettings.onSettingChanged(_, state, button)
 
 	if button == nil then button = state end
 
 	if button == nil or button.id == nil then return end
 
+	-- Verifica che il controllo appartenga a RealisticWeather (prefisso "rws_").
 	if not string.contains(button.id, "rws_") then return end
 
 	local name = string.sub(button.id, 5)
@@ -358,6 +422,7 @@ function RWSettings.onSettingChanged(_, state, button)
 
 	if setting == nil then return end
 
+	-- Impostazioni con ignore=true (es. Button) chiamano solo la callback senza aggiornare lo stato.
 	if setting.ignore then
 		if setting.callback then setting.callback() end
 		return
@@ -367,6 +432,7 @@ function RWSettings.onSettingChanged(_, state, button)
 
 	setting.state = state
 
+	-- Aggiorna lo stato disabilitato di tutti i controlli che dipendono da questa impostazione.
 	for _, s in pairs(RWSettings.SETTINGS) do
 		if s.dependancy and s.dependancy.name == name then
 			s.element:setDisabled(s.dependancy.state ~= state)
@@ -381,6 +447,7 @@ function RWSettings.onSettingChanged(_, state, button)
 
 	else
 
+		-- In multiplayer, il client trasmette la modifica al server.
 		RW_BroadcastSettingsEvent.sendEvent(name)
 
 	end
@@ -388,6 +455,9 @@ function RWSettings.onSettingChanged(_, state, button)
 end
 
 
+-- Applica tutte le impostazioni con il loro stato corrente, chiamando le rispettive callback.
+-- Usata all'avvio per inizializzare i sistemi con i valori caricati dal savegame.
+-- Sul client, la logica di broadcast è commentata (le impostazioni vengono ricevute dal server).
 function RWSettings.applyDefaultSettings()
 
 	if g_server == nil then
@@ -415,4 +485,5 @@ function RWSettings.applyDefaultSettings()
 end
 
 
+-- Eseguito al caricamento del file: inizializza il sistema UI e carica le impostazioni.
 RWSettings.initialize()

@@ -1,12 +1,47 @@
+-- AmbientSoundSystem.lua (RW_AmbientSoundSystem)
+-- Estensione del sistema audio ambientale di FS25 per integrare i suoni
+-- personalizzati di RealisticWeather (blizzard, intensità pioggia, ecc.).
+--
+-- Hook registrati:
+--   AmbientSoundSystem.updateMask        (append)    → RW_AmbientSoundSystem.updateMask
+--   AmbientSoundSystem.loadFromConfigFile (overwrite) → RW_AmbientSoundSystem.loadFromConfigFile
+--
+-- updateMask:
+--   Aggiunge 5 flag condizionali al sistema di maschere audio in base
+--   alle condizioni meteo correnti (pioggia e blizzard):
+--     blizzard   → attivo se weather.isBlizzard == true
+--     rain       → pioggia media (0.33 ≤ rainfall < 0.67)
+--     heavyRain  → pioggia forte (rainfall ≥ 0.67)
+--     lightRain  → pioggia leggera (0 < rainfall < 0.33)
+--     anyRain    → qualsiasi pioggia (rainfall > 0)
+--   Questi flag vengono usati come requiredFlags/preventFlags nei campioni
+--   audio definiti in xml/sounds.xml per condizionare la riproduzione.
+--
+-- loadFromConfigFile:
+--   Chiama prima la funzione base (carica sounds.xml vanilla di FS25),
+--   poi carica il file xml/sounds.xml del mod RW.
+--   Registra i modifier aggiuntivi (blizzard, heavyRain, lightRain, anyRain)
+--   nel conditionFlags del sistema.
+--   Per ogni campione audio nel file XML del mod:
+--     - Legge tutti i parametri (volume, pitch, delay, loop, fade, position, ecc.)
+--     - Aggiunge il campione tramite ambientSoundsAddSample
+--     - Aggiunge le variazioni audio tramite ambientSoundsAddSampleVariation
+--     - Configura volume indoor, fade, loop, pitch, delay, length per ogni variazione
+--   Il file XML è validato tramite AmbientSoundSystem.xmlSchema (schema vanilla).
+
 RW_AmbientSoundSystem = {}
-local modDirectory = g_currentModDirectory
+local modDirectory = g_currentModDirectory  -- directory base del mod per risolvere i path audio
 
 
+-- Hook append su AmbientSoundSystem.updateMask.
+-- Aggiorna i flag condizionali RW in base alle condizioni meteo correnti.
+-- Chiamato ogni volta che FS aggiorna la maschera audio (cambio meteo, ora del giorno, ecc.).
 function RW_AmbientSoundSystem:updateMask()
 
     local weather = g_currentMission.environment.weather
     local rainfall = weather:getRainFallScale()
 
+    -- Imposta i flag meteo RW nel sistema di condizioni audio.
     self.conditionFlags:setModifierValue("blizzard", weather.isBlizzard or false)
     self.conditionFlags:setModifierValue("rain", rainfall >= 0.33 and rainfall < 0.67)
     self.conditionFlags:setModifierValue("heavyRain", rainfall >= 0.67)
@@ -18,23 +53,34 @@ end
 AmbientSoundSystem.updateMask = Utils.appendedFunction(AmbientSoundSystem.updateMask, RW_AmbientSoundSystem.updateMask)
 
 
+-- Override di AmbientSoundSystem.loadFromConfigFile.
+-- Carica prima i suoni vanilla tramite la funzione base, poi aggiunge
+-- i suoni personalizzati del mod da xml/sounds.xml.
+-- Registra i modifier aggiuntivi prima di caricare i campioni per garantire
+-- che i flag siano disponibili per loadFlagsFromXMLFile.
+-- @return false se la funzione base fallisce, altrimenti il valore di ritorno base
 function RW_AmbientSoundSystem:loadFromConfigFile(superFunc)
 
     local returnValue = superFunc(self)
 
     if not returnValue then return false end
 
+    -- Carica il file XML dei suoni RW usando lo schema vanilla di FS25.
     local xmlFile = XMLFile.loadIfExists("rwAmbientSounds", modDirectory .. "xml/sounds.xml", AmbientSoundSystem.xmlSchema)
 
     if xmlFile == nil then return returnValue end
 
+    -- Registra i modifier aggiuntivi prima di processare i campioni.
+    -- "rain" è già registrato dal vanilla; blizzard, heavyRain, lightRain, anyRain sono nuovi.
     self.conditionFlags:registerModifier("blizzard", nil)
     self.conditionFlags:registerModifier("heavyRain", nil)
     self.conditionFlags:registerModifier("lightRain", nil)
     self.conditionFlags:registerModifier("anyRain", nil)
 
+    -- Processa ogni campione audio definito in xml/sounds.xml.
     for _, key in xmlFile:iterator("sound.ambient.sample") do
 
+        -- Parametri del campione audio principale.
         local filename = xmlFile:getValue(key .. "#filename")
         local probability = xmlFile:getValue(key .. "#probability", 1)
         local positionTag = xmlFile:getValue(key .. "#positionTag", "")
@@ -65,9 +111,13 @@ function RW_AmbientSoundSystem:loadFromConfigFile(superFunc)
         if audioGroup == nil then audioGroup = AudioGroup.ENVIRONMENT end
 
         local path = Utils.getFilename(filename, modDirectory)
+        -- Carica i flag richiesti e preventivi per questo campione dai tag XML.
         local requiredFlags, preventFlags = self.conditionFlags:loadFlagsFromXMLFile(xmlFile, key)
+        -- Registra il campione nel soundPlayer con tutti i parametri di trigger.
         local sampleId = ambientSoundsAddSample(self.soundPlayerId, audioGroup, minRetriggerDelaySeconds, maxRetriggerDelaySeconds, requiredFlags, preventFlags, minTimeOfDay, maxTimeOfDay, minDayOfYear, maxDayOfYear, positionTag or "", radius or 0, innerRadius or 0)
+        -- Registra la variazione principale (file audio + probabilità di selezione).
         local sampleVariationId = ambientSoundsAddSampleVariation(self.soundPlayerId, sampleId, path, probability)
+        -- Configura i parametri audio della variazione principale.
         ambientSoundsSampleSetIndoorVolumeFactor(self.soundPlayerId, sampleId, sampleVariationId, indoorVolume)
         ambientSoundsSampleSetFadeInOutTime(self.soundPlayerId, sampleId, sampleVariationId, fadeInTime, fadeOutTime)
         ambientSoundsSampleSetMinMaxVolume(self.soundPlayerId, sampleId, sampleVariationId, minVolume, maxVolume)
@@ -76,6 +126,8 @@ function RW_AmbientSoundSystem:loadFromConfigFile(superFunc)
         ambientSoundsSampleSetMinMaxDelay(self.soundPlayerId, sampleId, sampleVariationId, minDelay, maxDelay)
         ambientSoundsSampleSetMinMaxLength(self.soundPlayerId, sampleId, sampleVariationId, minLength, maxLength)
 
+        -- Processa le variazioni aggiuntive del campione (stesso sampleId, file diversi).
+        -- Le variazioni ereditano i parametri del campione base se non specificati.
         for _, variationKey in xmlFile:iterator(key .. ".variation") do
 
             local variationFilename = xmlFile:getValue(variationKey .. "#filename")
@@ -106,6 +158,7 @@ function RW_AmbientSoundSystem:loadFromConfigFile(superFunc)
 
         end
 
+        -- Aggiunge il campione alla lista interna per eventuali query future.
         table.insert(self.samples, {
             ["filename"] = path,
             ["audioGroupId"] = audioGroup,

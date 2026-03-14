@@ -1,18 +1,30 @@
+-- PuddleSystem.lua
+-- Gestore globale delle pozzanghere nel mondo di gioco.
+-- Responsabilità principali:
+--   - Caricamento delle varianti grafiche da puddles.xml (i3d con geometria e gruppi di punti)
+--   - Creazione, aggiunta, rimozione delle pozzanghere con limite basato sul profilo grafico
+--   - Aggiornamento in round-robin (una pozzanghera per tick) per distribuire il carico
+--   - Salvataggio/caricamento delle pozzanghere nel savegame XML
+--   - Configurazione del piano d'acqua (reflection map, shadow, collisione) per ogni forma
+--   - Gestione dell'impostazione puddlesEnabled (distrugge tutte le pozzanghere se disabilitata)
+
 PuddleSystem = {}
 
 local puddleSystem_mt = Class(PuddleSystem)
 local modDirectory = g_currentModDirectory
 
+-- Numero massimo di pozzanghere simultanee, scalato con il profilo di performance grafica.
 PuddleSystem.maxPuddles = Utils.getPerformanceClassId() * 4
 
 
+-- Costruttore. Inizializza le liste interne e lo stato del sistema.
 function PuddleSystem.new()
 
     local self = setmetatable({}, puddleSystem_mt)
 
-    self.puddles = {}
-    self.variations = {}
-    self.updateIteration = 1
+    self.puddles = {}           -- lista delle pozzanghere attive
+    self.variations = {}        -- varianti grafiche caricate da puddles.xml
+    self.updateIteration = 1    -- indice round-robin per l'aggiornamento delle pozzanghere
     self.timeSinceLastUpdate = 0
     self.isServer = g_currentMission:getIsServer()
     self.puddlesEnabled = true
@@ -22,6 +34,11 @@ function PuddleSystem.new()
 end
 
 
+-- Configura un nodo forma come piano d'acqua: reflection map, shadow, collisione.
+-- Viene chiamato da Puddle:initialize() per ogni shape clonata dalla variante.
+-- Gestisce profili diversi: Medium/Console → no reflections, High → reflections base, VeryHigh → reflections full.
+-- Emette warning se il nodo ha configurazioni errate (shadow cast, no shadow receive, collisione mancante).
+-- @param node  nodo i3d della forma acqua da configurare
 function PuddleSystem.onCreateWater(node)
 
 	if getHasClassId(node, ClassIds.SHAPE) then
@@ -42,10 +59,13 @@ function PuddleSystem.onCreateWater(node)
 		local performanceClass = Utils.getPerformanceClassId()
 
 		if performanceClass <= GS_PROFILE_MEDIUM or GS_IS_CONSOLE_VERSION then
+			-- Profilo basso o console: disabilita completamente le reflection.
 			setReflectionMapScaling(node, 0, true)
 		elseif performanceClass <= GS_PROFILE_HIGH then
+			-- Profilo medio: reflection base con maschere standard per l'acqua.
 			setReflectionMapObjectMasks(node, ObjectMask.SHAPE_VIS_WATER_REFL, ObjectMask.LIGHT_VIS_WATER_REFL, true)
 		else
+			-- Profilo alto: reflection di qualità massima.
 			setReflectionMapObjectMasks(node, ObjectMask.SHAPE_VIS_WATER_REFL_VERYHIGH, ObjectMask.LIGHT_VIS_WATER_REFL_VERYHIGH, true)
 		end
 
@@ -66,6 +86,10 @@ function PuddleSystem.onCreateWater(node)
 end
 
 
+-- Carica le varianti grafiche da xml/puddles.xml e, se siamo sul server,
+-- carica anche le pozzanghere salvate nel savegame.
+-- Per ogni variante: carica il file i3d, analizza la gerarchia dei nodi figli
+-- e memorizza il numero di punti per ogni gruppo (inner, outer, feelers).
 function PuddleSystem:loadVariations()
 
     local xmlFile = XMLFile.loadIfExists("PuddleSystem", modDirectory .. "xml/puddles.xml")
@@ -89,6 +113,7 @@ function PuddleSystem:loadVariations()
             local numShapes = getNumOfChildren(node)
             local groups = {}
 
+            -- Analizza la gerarchia del nodo per contare i punti di ogni gruppo (inner/outer/feelers).
             for i = 0, numShapes - 1 do
 
                 local shapeNode = getChildAt(node, i)
@@ -119,6 +144,8 @@ function PuddleSystem:loadVariations()
 end
 
 
+-- Carica le pozzanghere salvate dal file puddles.xml nel savegame corrente.
+-- Chiamato solo sul server durante loadVariations().
 function PuddleSystem:loadFromXMLFile()
 
     local savegameIndex = g_careerScreen.savegameList.selectedIndex
@@ -144,6 +171,8 @@ function PuddleSystem:loadFromXMLFile()
 end
 
 
+-- Salva tutte le pozzanghere attive nel file puddles.xml del savegame.
+-- @param path  percorso completo del file di destinazione
 function PuddleSystem:saveToXMLFile(path)
 
     if path == nil then return end
@@ -165,6 +194,8 @@ function PuddleSystem:saveToXMLFile(path)
 end
 
 
+-- Inizializza nella scena 3D tutte le pozzanghere già presenti nella lista
+-- (caricate dal savegame o ricevute via PuddleSystemStateEvent).
 function PuddleSystem:initialize()
 
     for _, puddle in pairs(self.puddles) do puddle:initialize() end
@@ -172,6 +203,7 @@ function PuddleSystem:initialize()
 end
 
 
+-- Restituisce la variante grafica con l'id specificato, o nil se non trovata.
 function PuddleSystem:getVariationById(id)
 
     for _, variation in pairs(self.variations) do
@@ -185,11 +217,13 @@ function PuddleSystem:getVariationById(id)
 end
 
 
+-- Restituisce una variante grafica casuale tra quelle disponibili.
 function PuddleSystem:getRandomVariation()
     return self.variations[math.random(1, #self.variations)]
 end
 
 
+-- Aggiunge una pozzanghera alla lista delle pozzanghere attive.
 function PuddleSystem:addPuddle(puddle)
 
     table.insert(self.puddles, puddle)
@@ -197,6 +231,7 @@ function PuddleSystem:addPuddle(puddle)
 end
 
 
+-- Rimuove una pozzanghera specifica dalla lista.
 function PuddleSystem:removePuddle(puddle)
 
     for i, p in pairs(self.puddles) do
@@ -210,6 +245,8 @@ function PuddleSystem:removePuddle(puddle)
 end
 
 
+-- Restituisce la pozzanghera più vicina al punto (x, z) nel mondo.
+-- @return tabella { distance, puddle } con la pozzanghera più vicina trovata
 function PuddleSystem:getClosestPuddleToPoint(x, z)
 
     local closestPoint = { ["distance"] = 10000, ["puddle"] = nil }
@@ -227,10 +264,17 @@ function PuddleSystem:getClosestPuddleToPoint(x, z)
 end
 
 
+-- Aggiorna il sistema di pozzanghere ogni tick del gioco.
+-- Strategia round-robin: si aggiorna una sola pozzanghera per chiamata,
+-- accumulando il timescale per le altre tramite timeSinceLastUpdate.
+-- Le pozzanghere con nodo non valido vengono rimosse automaticamente.
+-- @param timescale      tempo trascorso dall'ultimo tick
+-- @param moistureSystem sistema di umidità per la lettura del terreno
 function PuddleSystem:update(timescale, moistureSystem)
 
     if moistureSystem == nil or moistureSystem.isSaving or not self.puddlesEnabled then return end
 
+    -- Accumula il timescale su tutte le pozzanghere non ancora aggiornate questo tick.
     for _, puddle in pairs(self.puddles) do
 
         puddle.timeSinceLastUpdate = puddle.timeSinceLastUpdate + timescale + self.timeSinceLastUpdate
@@ -254,34 +298,18 @@ function PuddleSystem:update(timescale, moistureSystem)
         self.updateIteration = self.updateIteration - 1
     end
 
-    --for i = #self.puddles, 1, -1 do
-        
-        --local puddle = self.puddles[i]
-
-        --if puddle.node ~= nil then
-            --puddle:update(timescale, moistureSystem)
-
-            --if puddle.node ~= 0 then
-                --puddle:applyScale()
-                --puddle:applyPosition()
-            --end
-        --else
-            --puddle:delete()
-            --self:removePuddle(puddle)
-        --end
-
-    --end
-
-    --self:updateCachedCoords()
-
 end
 
 
+-- Verifica se è possibile creare una nuova pozzanghera.
+-- Solo il server può creare pozzanghere, il sistema deve essere abilitato
+-- e non deve essere stato raggiunto il limite massimo.
 function PuddleSystem:getCanCreatePuddle()
     return self.isServer and #self.puddles < PuddleSystem.maxPuddles and self.puddlesEnabled
 end
 
 
+-- Restituisce la pozzanghera che contiene il punto (x, z), o nil se nessuna la contiene.
 function PuddleSystem:getPuddleAtCoords(x, z)
 
     for _, puddle in pairs(self.puddles) do
@@ -295,6 +323,7 @@ function PuddleSystem:getPuddleAtCoords(x, z)
 end
 
 
+-- Aggiorna le coordinate mondo in cache per tutte le pozzanghere con nodo valido.
 function PuddleSystem:updateCachedCoords()
 
     for _, puddle in pairs(self.puddles) do
@@ -304,6 +333,10 @@ function PuddleSystem:updateCachedCoords()
 end
 
 
+-- Callback per il cambio delle impostazioni (chiamato da RWSettings).
+-- Se puddlesEnabled viene impostato a false, distrugge e rimuove tutte le pozzanghere attive.
+-- @param name   nome dell'impostazione modificata (es. "puddlesEnabled")
+-- @param state  nuovo valore dell'impostazione
 function PuddleSystem.onSettingChanged(name, state)
 
     local puddleSystem = g_currentMission.puddleSystem
