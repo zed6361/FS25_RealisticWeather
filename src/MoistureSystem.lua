@@ -16,7 +16,7 @@ table.insert(FinanceStats.statNames, "irrigationUpkeep")
 FinanceStats.statNameToIndex["irrigationUpkeep"] = #FinanceStats.statNames
 
 -- Dimensioni delle celle della griglia di umidità (in metri) per livello di performance
--- Indice più basso = celle più piccole = più precisione = più carico CPU
+-- Indice più alto = celle più piccole = più precisione = più carico CPU
 MoistureSystem.CELL_WIDTH = {
     [1] = 15, [2] = 12, [3] = 10, [4] = 7, [5] = 5, [6] = 4
 }
@@ -24,14 +24,19 @@ MoistureSystem.CELL_HEIGHT = {
     [1] = 15, [2] = 12, [3] = 10, [4] = 7, [5] = 5, [6] = 4
 }
 
--- Indice di performance predefinito per ogni profilo grafico di FS
+-- Indice di stato predefinito (1–9) nella lista valori dell'impostazione performanceIndex.
+-- Viene usato come indice nell'array { 2,3,4,5,6,7,8,9,10 }; il valore selezionato
+-- determina il numero di updater tramite state^2 (es. values[2]=3 → 9 updater).
+-- Hardware più potente (ULTRA) → indice basso → pochi updater → aggiornamento mappa più frequente.
+-- Hardware più debole (VERY_LOW) → indice alto → molti updater → carico distribuito su più tick.
+-- NOTA: questo NON è un indice in CELL_WIDTH; le dimensioni delle celle si basano su Utils.getPerformanceClassId().
 MoistureSystem.DEFAULT_PERFORMANCE_INDEXES = {
     [GS_PROFILE_ULTRA] = 2,
     [GS_PROFILE_VERY_HIGH] = 3,
     [GS_PROFILE_HIGH] = 4,
     [GS_PROFILE_MEDIUM] = 5,
     [GS_PROFILE_LOW] = 8,
-    [GS_PROFILE_VERY_LOW] = 10
+    [GS_PROFILE_VERY_LOW] = 9
 }
 
 MoistureSystem.MAP_WIDTH = 2048               -- larghezza di default della mappa (metri)
@@ -632,8 +637,8 @@ function MoistureSystem:update(delta, timescale)
         -- Invia sync MP per le modifiche accumulate
         if updater.pendingSync ~= nil and updater.pendingSync.numRows ~= nil and updater.pendingSync.numRows > 0 then
             -- RW_PERF_FIX: sync delta-riga con sequenze deterministiche
-            moistureSystem.syncSequence = moistureSystem.syncSequence + 1
-            local event = MoistureSyncEvent.new(updater.pendingSync, false, moistureSystem.syncSequence, moistureSystem.syncSequence - 1)
+            self.syncSequence = self.syncSequence + 1
+            local event = MoistureSyncEvent.new(updater.pendingSync, false, self.syncSequence, self.syncSequence - 1)
             if self.isServer then
                 g_server:broadcastEvent(event)
             else
