@@ -24,16 +24,19 @@ MoistureSystem.CELL_HEIGHT = {
     [1] = 15, [2] = 12, [3] = 10, [4] = 7, [5] = 5, [6] = 4
 }
 
--- Indice di performance predefinito per ogni profilo grafico di FS.
--- Hardware più potente (ULTRA) → indice più alto → celle più piccole (più precisione).
--- Hardware più debole (VERY_LOW) → indice più basso → celle più grandi (meno carico CPU).
+-- Indice di stato predefinito (1–9) nella lista valori dell'impostazione performanceIndex.
+-- Viene usato come indice nell'array { 2,3,4,5,6,7,8,9,10 }; il valore selezionato
+-- determina il numero di updater tramite state^2 (es. values[2]=3 → 9 updater).
+-- Hardware più potente (ULTRA) → indice basso → pochi updater → aggiornamento mappa più frequente.
+-- Hardware più debole (VERY_LOW) → indice alto → molti updater → carico distribuito su più tick.
+-- NOTA: questo NON è un indice in CELL_WIDTH; le dimensioni delle celle si basano su Utils.getPerformanceClassId().
 MoistureSystem.DEFAULT_PERFORMANCE_INDEXES = {
-    [GS_PROFILE_ULTRA] = 6,
-    [GS_PROFILE_VERY_HIGH] = 5,
+    [GS_PROFILE_ULTRA] = 2,
+    [GS_PROFILE_VERY_HIGH] = 3,
     [GS_PROFILE_HIGH] = 4,
-    [GS_PROFILE_MEDIUM] = 3,
-    [GS_PROFILE_LOW] = 2,
-    [GS_PROFILE_VERY_LOW] = 1
+    [GS_PROFILE_MEDIUM] = 5,
+    [GS_PROFILE_LOW] = 8,
+    [GS_PROFILE_VERY_LOW] = 9
 }
 
 MoistureSystem.MAP_WIDTH = 2048               -- larghezza di default della mappa (metri)
