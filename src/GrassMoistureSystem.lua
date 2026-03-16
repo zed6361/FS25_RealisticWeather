@@ -69,8 +69,8 @@ end
 --   1. Applica moistureDelta accumulato all'umidità di ogni area.
 --   2. Se moisture <= HAY_MOISTURE: converte l'area da erba a fieno (solo server)
 --      e la aggiunge alla lista di rimozione.
---   3. Rimuove le aree convertite dalla lista.
---   4. Azzera moistureDelta.
+--   3. Azzera moistureDelta.
+--   4. Rimuove le aree convertite dalla lista.
 -- @param delta  variazione di umidità da applicare (positivo = pioggia, negativo = asciutto)
 function GrassMoistureSystem:update(delta)
 

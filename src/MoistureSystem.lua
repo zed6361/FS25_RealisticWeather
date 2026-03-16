@@ -16,7 +16,7 @@ table.insert(FinanceStats.statNames, "irrigationUpkeep")
 FinanceStats.statNameToIndex["irrigationUpkeep"] = #FinanceStats.statNames
 
 -- Dimensioni delle celle della griglia di umidità (in metri) per livello di performance
--- Indice più basso = celle più piccole = più precisione = più carico CPU
+-- Indice più alto = celle più piccole = più precisione = più carico CPU
 MoistureSystem.CELL_WIDTH = {
     [1] = 15, [2] = 12, [3] = 10, [4] = 7, [5] = 5, [6] = 4
 }
@@ -24,14 +24,16 @@ MoistureSystem.CELL_HEIGHT = {
     [1] = 15, [2] = 12, [3] = 10, [4] = 7, [5] = 5, [6] = 4
 }
 
--- Indice di performance predefinito per ogni profilo grafico di FS
+-- Indice di performance predefinito per ogni profilo grafico di FS.
+-- Hardware più potente (ULTRA) → indice più alto → celle più piccole (più precisione).
+-- Hardware più debole (VERY_LOW) → indice più basso → celle più grandi (meno carico CPU).
 MoistureSystem.DEFAULT_PERFORMANCE_INDEXES = {
-    [GS_PROFILE_ULTRA] = 2,
-    [GS_PROFILE_VERY_HIGH] = 3,
+    [GS_PROFILE_ULTRA] = 6,
+    [GS_PROFILE_VERY_HIGH] = 5,
     [GS_PROFILE_HIGH] = 4,
-    [GS_PROFILE_MEDIUM] = 5,
-    [GS_PROFILE_LOW] = 8,
-    [GS_PROFILE_VERY_LOW] = 10
+    [GS_PROFILE_MEDIUM] = 3,
+    [GS_PROFILE_LOW] = 2,
+    [GS_PROFILE_VERY_LOW] = 1
 }
 
 MoistureSystem.MAP_WIDTH = 2048               -- larghezza di default della mappa (metri)
@@ -632,8 +634,8 @@ function MoistureSystem:update(delta, timescale)
         -- Invia sync MP per le modifiche accumulate
         if updater.pendingSync ~= nil and updater.pendingSync.numRows ~= nil and updater.pendingSync.numRows > 0 then
             -- RW_PERF_FIX: sync delta-riga con sequenze deterministiche
-            moistureSystem.syncSequence = moistureSystem.syncSequence + 1
-            local event = MoistureSyncEvent.new(updater.pendingSync, false, moistureSystem.syncSequence, moistureSystem.syncSequence - 1)
+            self.syncSequence = self.syncSequence + 1
+            local event = MoistureSyncEvent.new(updater.pendingSync, false, self.syncSequence, self.syncSequence - 1)
             if self.isServer then
                 g_server:broadcastEvent(event)
             else
